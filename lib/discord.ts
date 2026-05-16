@@ -67,7 +67,12 @@ export interface Usuario {
   nome: string;
   email: string;
   senha: string;
+  device_hash?: string;
   barbeiro_favorito: string | null;
+  servico_favorito: string | null;
+  horario_favorito: string | null;
+  unidade_favorita: string | null;
+  tema: 'dark' | 'light';
   pontos: number;
   _messageId?: string;
 }
@@ -81,6 +86,7 @@ export interface Agendamento {
   horario: string;
   valor: number;
   status: 'confirmado' | 'cancelado' | 'pendente';
+  unidade_id: string;
   avaliacao: number | null;
   _messageId?: string;
 }
@@ -177,15 +183,22 @@ export async function getAgendamentoById(id: string): Promise<Agendamento | null
 
 // ─── Stats helpers ────────────────────────────────────────────────────────────
 
-export async function getMediaEstrelas(barbeiroId: string): Promise<number> {
+export async function getMediaEstrelas(barbeiroId: string): Promise<{media: number; total: number}> {
   const ags = await getAgendamentosByBarbeiro(barbeiroId);
   const avaliados = ags.filter(a => a.avaliacao !== null && a.avaliacao > 0);
-  if (avaliados.length === 0) return 0;
+  if (avaliados.length === 0) return {media: 0, total: 0};
   const soma = avaliados.reduce((acc, a) => acc + (a.avaliacao || 0), 0);
-  return Math.round((soma / avaliados.length) * 10) / 10;
+  return {media: Math.round((soma / avaliados.length) * 10) / 10, total: avaliados.length};
 }
 
 export async function getHorariosOcupados(barbeiroId: string, data: string): Promise<string[]> {
   const ags = await getAgendamentosByData(barbeiroId, data);
   return ags.map(a => a.horario);
+}
+
+export async function deleteUsuario(messageId: string): Promise<void> {
+  await fetch(`${BASE_URL}/channels/${CHANNEL_USUARIOS}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers,
+  });
 }
