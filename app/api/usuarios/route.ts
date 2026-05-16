@@ -26,8 +26,11 @@ export async function POST(req: NextRequest) {
     if (!usuario) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 });
 
     if (action === 'prefs') {
-      const fields = ['barbeiro_favorito', 'servico_favorito', 'horario_favorito', 'unidade_favorita', 'tema'];
-      for (const f of fields) if (f in body) (usuario as Record<string, unknown>)[f] = body[f];
+      if ('barbeiro_favorito' in body) usuario.barbeiro_favorito = body.barbeiro_favorito;
+      if ('servico_favorito' in body) usuario.servico_favorito = body.servico_favorito;
+      if ('horario_favorito' in body) usuario.horario_favorito = body.horario_favorito;
+      if ('unidade_favorita' in body) usuario.unidade_favorita = body.unidade_favorita;
+      if ('tema' in body) usuario.tema = body.tema;
       await updateUsuario(usuario);
       const { senha: _, ...safe } = usuario;
       return NextResponse.json({ ok: true, usuario: safe });
