@@ -1,0 +1,102 @@
+/* app/globals.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Playfair Display', serif;
+  --font-body: 'DM Sans', sans-serif;
+  
+  --green: #1a7a2e;
+  --green-light: #2db84b;
+  --yellow: #f5c518;
+  --red: #c0392b;
+  --dark: #0d0d0d;
+  --charcoal: #1a1a1a;
+  --smoke: #2a2a2a;
+  --cream: #f5f0e8;
+  --gold: #d4a017;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: var(--font-body);
+  background-color: var(--dark);
+  color: var(--cream);
+  min-height: 100vh;
+}
+
+/* Rasta stripe decoration */
+.rasta-stripe {
+  height: 4px;
+  background: linear-gradient(90deg, #1a7a2e 33%, #f5c518 33% 66%, #c0392b 66%);
+}
+
+.rasta-stripe-vert {
+  width: 4px;
+  background: linear-gradient(180deg, #1a7a2e 33%, #f5c518 33% 66%, #c0392b 66%);
+}
+
+/* Card glass effect */
+.glass-card {
+  background: rgba(26, 26, 26, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(245, 240, 232, 0.08);
+}
+
+/* Input styles */
+.input-reggae {
+  @apply w-full bg-rasta-smoke border border-white/10 rounded-lg px-4 py-3 text-rasta-cream placeholder-white/30 focus:outline-none focus:border-rasta-green-light transition-colors;
+  font-family: var(--font-body);
+}
+
+/* Button primary */
+.btn-primary {
+  @apply bg-rasta-green-light hover:bg-rasta-green text-white font-semibold px-6 py-3 rounded-lg transition-all duration-200 active:scale-95;
+}
+
+/* Button ghost */
+.btn-ghost {
+  @apply border border-white/20 hover:border-white/40 text-rasta-cream hover:bg-white/5 font-medium px-6 py-3 rounded-lg transition-all duration-200 active:scale-95;
+}
+
+/* Star rating */
+.star {
+  cursor: pointer;
+  color: #444;
+  font-size: 1.5rem;
+  transition: color 0.15s;
+}
+.star.active {
+  color: #f5c518;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--charcoal);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--smoke);
+  border-radius: 3px;
+}
+
+/* Noise texture overlay */
+.noise::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9999;
+  opacity: 0.4;
+}
