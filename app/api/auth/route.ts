@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       // Check device fingerprint (one account per device)
       if (device_hash) {
         const todos = await getAllUsuarios();
-        const deviceExists = todos.some(u => (u as Record<string, unknown>).device_hash === device_hash);
+        const deviceExists = todos.some(u => u.device_hash === device_hash);
         if (deviceExists) return NextResponse.json({ error: 'Já existe uma conta neste dispositivo. Faça login.' }, { status: 409 });
       }
 
