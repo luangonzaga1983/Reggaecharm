@@ -1,6 +1,6 @@
 'use client';
 // app/agendar/page.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Navbar from '@/components/Navbar';
 import { BARBEIROS, SERVICOS } from '@/lib/data';
@@ -8,6 +8,18 @@ import { BARBEIROS, SERVICOS } from '@/lib/data';
 type Step = 'barbeiro' | 'servico' | 'data' | 'horario' | 'pagamento' | 'sucesso';
 
 export default function AgendarPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-rasta-green-light animate-pulse text-2xl">🌿</div>
+      </div>
+    }>
+      <AgendarContent />
+    </Suspense>
+  );
+}
+
+function AgendarContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const preselect = searchParams.get('barbeiro');
@@ -297,13 +309,11 @@ export default function AgendarPage() {
                 <p className="text-white/50 text-sm mt-1">Pague no seu banco e confirme aqui</p>
               </div>
 
-              {/* Value */}
               <div className="bg-rasta-green/10 border border-rasta-green/30 rounded-xl p-4 text-center mb-6">
                 <p className="text-xs text-white/40 mb-1">Valor a pagar</p>
                 <p className="text-3xl font-bold text-rasta-green-light">R$ {valor.toFixed(2)}</p>
               </div>
 
-              {/* Summary */}
               <div className="space-y-2 mb-6 text-sm">
                 <div className="flex justify-between text-white/60">
                   <span>Barbeiro</span>
@@ -319,7 +329,6 @@ export default function AgendarPage() {
                 </div>
               </div>
 
-              {/* PIX Key */}
               <div className="bg-rasta-smoke border border-rasta-yellow/30 rounded-xl p-4 mb-6">
                 <p className="text-xs text-white/40 mb-2 uppercase tracking-wider">Chave PIX</p>
                 <div className="flex items-center justify-between gap-3">
