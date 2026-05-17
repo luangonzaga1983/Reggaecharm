@@ -1,6 +1,7 @@
 // lib/auth.ts
 import { SignJWT, jwtVerify } from 'jose';
 import { cookies } from 'next/headers';
+import type { UserRole } from './discord';
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || 'fallback-secret-change-in-production'
@@ -10,6 +11,7 @@ export interface JWTPayload {
   id: string;
   email: string;
   nome: string;
+  role: UserRole;
 }
 
 export async function signToken(payload: JWTPayload): Promise<string> {
@@ -36,9 +38,23 @@ export async function getSession(): Promise<JWTPayload | null> {
   return verifyToken(token);
 }
 
-export function setAuthCookie(token: string, response: Response): void {
-  response.headers.append(
-    'Set-Cookie',
-    `reggae_token=${token}; HttpOnly; Path=/; Max-Age=${30 * 24 * 60 * 60}; SameSite=Lax`
-  );
+// Permissões por nível
+export const ROLE_LEVEL: Record<UserRole, number> = {
+  cliente: 0,
+  barbeiro: 1,
+  gerente: 2,
+  dono: 3,
+};
+
+export function canDo(role: UserRole, action: 'cancelar_proprio' | 'cancelar_alheio' | 'ver_todos_ag' | 'gerenciar_usuarios' | 'promover' | 'acesso_admin'): boolean {
+  const lvl = ROLE_LEVEL[role];
+  switch (action) {
+    case 'cancelar_proprio': return lvl >= 0;       // qualquer um
+    case 'cancelar_alheio': return lvl >= 1;        // barbeiro+
+    case 'ver_todos_ag':    return lvl >= 1;        // barbeiro+
+    case 'gerenciar_usuarios': return lvl >= 2;     // gerente+
+    case 'promover':        return lvl >= 2;        // gerente+ (mas gerente não pode criar dono)
+    case 'acesso_admin':    return lvl >= 1;        // barbeiro+
+    default: return false;
+  }
 }

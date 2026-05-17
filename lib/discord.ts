@@ -62,6 +62,8 @@ interface DiscordMessage {
   content: string;
 }
 
+export type UserRole = 'cliente' | 'barbeiro' | 'gerente' | 'dono';
+
 export interface Usuario {
   id: string;
   nome: string;
@@ -74,6 +76,9 @@ export interface Usuario {
   unidade_favorita: string | null;
   tema: 'dark' | 'light';
   pontos: number;
+  role: UserRole;
+  barbeiro_id?: string | null; // vínculo com id do BARBEIROS array (se role === 'barbeiro')
+  unidade_id?: string | null;  // unidade do barbeiro/gerente
   _messageId?: string;
 }
 
@@ -155,6 +160,11 @@ export async function getAgendamentosByUsuario(usuarioId: string): Promise<Agend
 export async function getAgendamentosByBarbeiro(barbeiroId: string): Promise<Agendamento[]> {
   const all = await getAllAgendamentos();
   return all.filter(a => a.barbeiro_id === barbeiroId);
+}
+
+export async function getAgendamentosByUnidade(unidadeId: string): Promise<Agendamento[]> {
+  const all = await getAllAgendamentos();
+  return all.filter(a => a.unidade_id === unidadeId);
 }
 
 export async function getAgendamentosByData(barbeiroId: string, data: string): Promise<Agendamento[]> {

@@ -13,18 +13,21 @@ export async function POST(req: NextRequest) {
       const { nome, email, senha, device_hash } = body;
       if (!nome || !email || !senha) return NextResponse.json({ error: 'Campos obrigatórios faltando' }, { status: 400 });
 
-      // Check existing email
       const existing = await getUsuarioByEmail(email);
       if (existing) return NextResponse.json({ error: 'E-mail já cadastrado' }, { status: 409 });
 
-      // Check device fingerprint (one account per device)
       if (device_hash) {
         const todos = await getAllUsuarios();
         const deviceExists = todos.some(u => u.device_hash === device_hash);
-        if (deviceExists) return NextResponse.json({ error: 'Já existe uma conta neste dispositivo. Faça login.' }, { status: 409 });
+        if (deviceExists) return NextResponse.json({ error: 'Já existe uma conta neste dispositivo.' }, { status: 409 });
       }
 
       const senhaHash = await bcrypt.hash(senha, 12);
+
+      // Primeiro usuário vira dono automaticamente
+      const todos = await getAllUsuarios();
+      const primeiroUsuario = todos.length === 0;
+
       const usuario = await createUsuario({
         id: uuidv4(),
         nome: nome.trim(),
@@ -37,9 +40,12 @@ export async function POST(req: NextRequest) {
         unidade_favorita: null,
         tema: 'dark',
         pontos: 0,
+        role: primeiroUsuario ? 'dono' : 'cliente',
+        barbeiro_id: null,
+        unidade_id: null,
       });
 
-      const token = await signToken({ id: usuario.id, email: usuario.email, nome: usuario.nome });
+      const token = await signToken({ id: usuario.id, email: usuario.email, nome: usuario.nome, role: usuario.role });
       const res = NextResponse.json({ ok: true });
       res.cookies.set('reggae_token', token, { httpOnly: true, path: '/', maxAge: 30 * 24 * 60 * 60, sameSite: 'lax' });
       return res;
@@ -53,7 +59,7 @@ export async function POST(req: NextRequest) {
       const ok = await bcrypt.compare(senha, usuario.senha);
       if (!ok) return NextResponse.json({ error: 'E-mail ou senha inválidos' }, { status: 401 });
 
-      const token = await signToken({ id: usuario.id, email: usuario.email, nome: usuario.nome });
+      const token = await signToken({ id: usuario.id, email: usuario.email, nome: usuario.nome, role: usuario.role || 'cliente' });
       const res = NextResponse.json({ ok: true });
       res.cookies.set('reggae_token', token, { httpOnly: true, path: '/', maxAge: 30 * 24 * 60 * 60, sameSite: 'lax' });
       return res;

@@ -3,9 +3,10 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   createAgendamento, getAllAgendamentos, getAgendamentoById,
   getAgendamentosByUsuario, getHorariosOcupados, updateAgendamento,
-  getUsuarioById, updateUsuario, getMediaEstrelas,
+  getUsuarioById, updateUsuario, getMediaEstrelas, getAgendamentosByBarbeiro,
+  getAgendamentosByUnidade,
 } from '@/lib/discord';
-import { getSession } from '@/lib/auth';
+import { getSession, canDo } from '@/lib/auth';
 import { BARBEIROS, SERVICOS, gerarHorarios } from '@/lib/data';
 
 export async function GET(req: NextRequest) {
@@ -18,7 +19,7 @@ export async function GET(req: NextRequest) {
       const data = searchParams.get('data');
       if (!barbeiroId || !data) return NextResponse.json({ error: 'Parâmetros faltando' }, { status: 400 });
       const ocupados = await getHorariosOcupados(barbeiroId, data);
-      const horarios = gerarHorarios(7, 20); // fallback genérico; unidade resolve no client
+      const horarios = gerarHorarios(7, 20);
       return NextResponse.json({ horarios, ocupados });
     }
 
@@ -37,6 +38,25 @@ export async function GET(req: NextRequest) {
         })
       );
       return NextResponse.json({ stats });
+    }
+
+    // Admin: todos agendamentos (barbeiro vê os seus, gerente/dono vê todos)
+    if (action === 'admin') {
+      const session = await getSession();
+      if (!session || !canDo(session.role, 'ver_todos_ag')) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
+      
+      let ags;
+      if (session.role === 'barbeiro') {
+        // Barbeiro: pega seus agendamentos via barbeiro_id vinculado ao seu perfil
+        const usuario = await getUsuarioById(session.id);
+        ags = usuario?.barbeiro_id ? await getAgendamentosByBarbeiro(usuario.barbeiro_id) : [];
+      } else if (session.role === 'gerente') {
+        const usuario = await getUsuarioById(session.id);
+        ags = usuario?.unidade_id ? await getAgendamentosByUnidade(usuario.unidade_id) : await getAllAgendamentos();
+      } else {
+        ags = await getAllAgendamentos();
+      }
+      return NextResponse.json({ agendamentos: ags });
     }
 
     return NextResponse.json({ error: 'Ação inválida' }, { status: 400 });
@@ -77,8 +97,31 @@ export async function POST(req: NextRequest) {
     if (action === 'cancelar') {
       const ag = await getAgendamentoById(body.agendamento_id);
       if (!ag) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 });
-      if (ag.usuario_id !== session.id) return NextResponse.json({ error: 'Não autorizado' }, { status: 403 });
+
+      const ehDono = ag.usuario_id === session.id;
+      if (!ehDono && !canDo(session.role, 'cancelar_alheio')) {
+        return NextResponse.json({ error: 'Não autorizado' }, { status: 403 });
+      }
+
+      // Barbeiro só pode cancelar agendamentos com ele mesmo
+      if (session.role === 'barbeiro' && !ehDono) {
+        const usuario = await getUsuarioById(session.id);
+        if (ag.barbeiro_id !== usuario?.barbeiro_id) {
+          return NextResponse.json({ error: 'Só pode cancelar agendamentos com você' }, { status: 403 });
+        }
+      }
+
       ag.status = 'cancelado';
+      await updateAgendamento(ag);
+      return NextResponse.json({ ok: true });
+    }
+
+    if (action === 'confirmar') {
+      // Gerente/dono pode confirmar agendamentos
+      if (!canDo(session.role, 'ver_todos_ag')) return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
+      const ag = await getAgendamentoById(body.agendamento_id);
+      if (!ag) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 });
+      ag.status = 'confirmado';
       await updateAgendamento(ag);
       return NextResponse.json({ ok: true });
     }
@@ -89,14 +132,16 @@ export async function POST(req: NextRequest) {
       const ag = await getAgendamentoById(agendamento_id);
       if (!ag) return NextResponse.json({ error: 'Não encontrado' }, { status: 404 });
       if (ag.usuario_id !== session.id) return NextResponse.json({ error: 'Não autorizado' }, { status: 403 });
+      const jaAvaliado = !!ag.avaliacao;
       ag.avaliacao = estrelas;
       await updateAgendamento(ag);
 
-      // Adicionar pontos na primeira avaliação
-      const usuario = await getUsuarioById(session.id);
-      if (usuario && !ag.avaliacao) {
-        usuario.pontos = (usuario.pontos || 0) + 5;
-        await updateUsuario(usuario);
+      if (!jaAvaliado) {
+        const usuario = await getUsuarioById(session.id);
+        if (usuario) {
+          usuario.pontos = (usuario.pontos || 0) + 5;
+          await updateUsuario(usuario);
+        }
       }
       return NextResponse.json({ ok: true });
     }
