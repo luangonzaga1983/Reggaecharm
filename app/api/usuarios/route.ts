@@ -135,7 +135,8 @@ export async function POST(req: NextRequest) {
       const alvo = await getUsuarioById(usuario_id);
       if (!alvo) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
       if (alvo.role === 'dono') return NextResponse.json({ error: 'Não é possível banir o dono' }, { status: 403 });
-      if (session.role === 'gerente' && (alvo.role === 'gerente' || alvo.role === 'dono')) {
+      // At this point TypeScript knows alvo.role !== 'dono'
+      if (session.role === 'gerente' && alvo.role === 'gerente') {
         return NextResponse.json({ error: 'Gerentes só podem banir clientes e barbeiros' }, { status: 403 });
       }
       await banirUsuario(alvo, motivo || 'Sem motivo informado', ban_ip);
