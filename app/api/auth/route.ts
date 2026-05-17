@@ -23,8 +23,6 @@ export async function POST(req: NextRequest) {
       }
 
       const senhaHash = await bcrypt.hash(senha, 12);
-
-      // Primeiro usuário vira dono automaticamente
       const todos = await getAllUsuarios();
       const primeiroUsuario = todos.length === 0;
 
@@ -33,6 +31,8 @@ export async function POST(req: NextRequest) {
         nome: nome.trim(),
         email: email.toLowerCase().trim(),
         senha: senhaHash,
+        username: null,
+        foto_url: null,
         device_hash: device_hash || null,
         barbeiro_favorito: null,
         servico_favorito: null,

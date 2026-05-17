@@ -1,6 +1,5 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { UNIDADES, SERVICOS, getUnidadeStatus, gerarHorarios } from '@/lib/data';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -11,7 +10,6 @@ interface BarbeiroDB {
   nome: string;
   especialidades: string[];
   unidades: string[];
-  emoji: string;
   ativo: boolean;
   photo_url?: string | null;
   _messageId?: string;
@@ -28,6 +26,8 @@ interface Usuario {
   id: string;
   nome: string;
   email: string;
+  username?: string | null;
+  foto_url?: string | null;
   barbeiro_favorito: string | null;
   servico_favorito: string | null;
   horario_favorito: string | null;
@@ -54,14 +54,41 @@ interface Agendamento {
 
 interface Stats { barbeiroId: string; mediaEstrelas: number; totalAvaliacoes: number; }
 
+interface UnidadeConfig {
+  id: string;
+  nome: string;
+  endereco: string;
+  bairro: string;
+  cidade: string;
+  horario: { abertura: number; fechamento: number };
+  dias_semana: number[];
+  barbeiros: string[];
+  ativo: boolean;
+}
+
+interface ServicoConfig {
+  id: string;
+  nome: string;
+  valor: number;
+  duracao: number;
+  descricao: string;
+  ativo: boolean;
+}
+
+interface StoreConfig {
+  nome_loja: string;
+  slogan: string;
+  tema_cor: 'green' | 'yellow' | 'red' | 'purple' | 'blue';
+  unidades: UnidadeConfig[];
+  servicos: ServicoConfig[];
+  _messageId?: string;
+}
+
 type AppTab = 'dashboard' | 'configuracoes' | 'admin';
 type Step = 'unidade' | 'barbeiro' | 'servico' | 'data' | 'termos' | 'sucesso';
 
 const ROLE_LABEL: Record<UserRole, string> = {
-  cliente: 'Cliente',
-  barbeiro: 'Barbeiro',
-  gerente: 'Gerente',
-  dono: 'Dono',
+  cliente: 'Cliente', barbeiro: 'Barbeiro', gerente: 'Gerente', dono: 'Dono',
 };
 
 const ROLE_COLOR: Record<UserRole, string> = {
@@ -71,6 +98,16 @@ const ROLE_COLOR: Record<UserRole, string> = {
   dono: 'var(--red)',
 };
 
+const TEMA_COR_MAP: Record<string, string> = {
+  green: '#00c853',
+  yellow: '#ffd600',
+  red: '#ff1744',
+  purple: '#a78bfa',
+  blue: '#38bdf8',
+};
+
+const DIAS_NOMES = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+
 function canDo(role: UserRole, action: string): boolean {
   const lvl = { cliente: 0, barbeiro: 1, gerente: 2, dono: 3 }[role] ?? 0;
   switch (action) {
@@ -79,8 +116,58 @@ function canDo(role: UserRole, action: string): boolean {
     case 'gerenciar_usuarios': return lvl >= 2;
     case 'acesso_admin':   return lvl >= 1;
     case 'promover':       return lvl >= 2;
+    case 'config_loja':    return lvl >= 3;
     default: return false;
   }
+}
+
+function getUnidadeStatus(u: UnidadeConfig): { aberto: boolean; texto: string } {
+  const now = new Date();
+  const diaSemana = now.getDay();
+  const total = now.getHours() * 60 + now.getMinutes();
+  const abre = u.horario.abertura * 60;
+  const fecha = u.horario.fechamento * 60;
+
+  if (!u.dias_semana.includes(diaSemana)) {
+    const proxDia = u.dias_semana.find(d => d > diaSemana) ?? u.dias_semana[0];
+    return { aberto: false, texto: 'Abre ' + DIAS_NOMES[proxDia] };
+  }
+
+  const aberto = total >= abre && total < fecha;
+  if (!aberto) {
+    if (total < abre) return { aberto: false, texto: 'Abre às ' + String(u.horario.abertura).padStart(2,'0') + ':00' };
+    return { aberto: false, texto: 'Fechado hoje' };
+  }
+  const resta = fecha - total;
+  if (resta <= 60) return { aberto: true, texto: 'Fecha em ' + resta + ' min' };
+  return { aberto: true, texto: 'Até ' + String(u.horario.fechamento).padStart(2,'0') + ':00' };
+}
+
+function gerarHorarios(abertura: number, fechamento: number): string[] {
+  const slots: string[] = [];
+  for (let h = abertura; h < fechamento; h++) {
+    slots.push(String(h).padStart(2,'0') + ':00');
+    slots.push(String(h).padStart(2,'0') + ':30');
+  }
+  return slots;
+}
+
+// ─── Avatar ───────────────────────────────────────────────────────────────────
+
+function Avatar({ src, nome, size = 40, accent = 'var(--green)' }: { src?: string | null; nome: string; size?: number; accent?: string }) {
+  const initials = nome.split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: '50%',
+      background: src ? 'transparent' : `${accent}22`,
+      border: `1px solid ${accent}55`,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      overflow: 'hidden', flexShrink: 0, fontSize: size * 0.35, fontWeight: 700,
+      color: accent, letterSpacing: '0.04em',
+    }}>
+      {src ? <img src={src} alt={nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : initials}
+    </div>
+  );
 }
 
 // ─── Stars ───────────────────────────────────────────────────────────────────
@@ -124,99 +211,31 @@ function Auth({ onSuccess }: { onSuccess: () => void }) {
   }
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      alignItems: 'center',
-      justifyContent: 'center',
-      padding: '24px 20px',
-      position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Fundo texturizado */}
-      <div style={{
-        position: 'fixed', inset: 0,
-        background: 'var(--black)',
-        zIndex: 0,
-      }} />
-      {/* Glow verde embaixo */}
-      <div style={{
-        position: 'fixed',
-        bottom: '-10%', left: '50%',
-        transform: 'translateX(-50%)',
-        width: '70vw', height: '40vh',
-        borderRadius: '50%',
-        background: 'radial-gradient(ellipse, rgba(0,200,83,0.15) 0%, transparent 70%)',
-        pointerEvents: 'none', zIndex: 0,
-      }} />
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'fixed', inset: 0, background: 'var(--black)', zIndex: 0 }} />
+      <div style={{ position: 'fixed', bottom: '-10%', left: '50%', transform: 'translateX(-50%)', width: '70vw', height: '40vh', borderRadius: '50%', background: 'radial-gradient(ellipse, rgba(0,200,83,0.15) 0%, transparent 70%)', pointerEvents: 'none', zIndex: 0 }} />
 
       <div style={{ width: '100%', maxWidth: 400, position: 'relative', zIndex: 1 }}>
-
-        {/* Marca */}
         <div style={{ marginBottom: 40 }}>
           <div className="rasta-bar" style={{ width: 48, borderRadius: 2, marginBottom: 24 }} />
           <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, marginBottom: 6 }}>
-            <span style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'clamp(3rem, 10vw, 4.5rem)',
-              lineHeight: 0.9,
-              letterSpacing: '0.03em',
-              color: 'var(--text)',
-            }}>REGGAE</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(3rem, 10vw, 4.5rem)', lineHeight: 0.9, letterSpacing: '0.03em', color: 'var(--text)' }}>REGGAE</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span style={{
-              fontFamily: 'var(--font-display)',
-              fontSize: 'clamp(3rem, 10vw, 4.5rem)',
-              lineHeight: 0.9,
-              letterSpacing: '0.03em',
-              color: 'var(--green)',
-              textShadow: '0 0 40px rgba(0,200,83,0.4)',
-            }}>CHARM</span>
-            <span style={{
-              fontFamily: 'var(--font-mono)',
-              fontSize: '0.62rem',
-              color: 'var(--text-faint)',
-              letterSpacing: '0.15em',
-              textTransform: 'uppercase',
-              lineHeight: 1.4,
-              paddingBottom: 4,
-            }}>ONE LOVE<br />ONE CUT</span>
+            <span style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(3rem, 10vw, 4.5rem)', lineHeight: 0.9, letterSpacing: '0.03em', color: 'var(--green)', textShadow: '0 0 40px rgba(0,200,83,0.4)' }}>CHARM</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)', letterSpacing: '0.15em', textTransform: 'uppercase', lineHeight: 1.4, paddingBottom: 4 }}>ONE LOVE<br />ONE CUT</span>
           </div>
         </div>
 
-        {/* Tabs entrar/cadastrar */}
-        <div style={{
-          display: 'flex',
-          gap: 0,
-          marginBottom: 28,
-          borderBottom: '1px solid var(--border)',
-        }}>
+        <div style={{ display: 'flex', gap: 0, marginBottom: 28, borderBottom: '1px solid var(--border)' }}>
           {(['login', 'registro'] as const).map(m => (
             <button key={m} onClick={() => { setMode(m); setError(''); }}
-              style={{
-                flex: 1,
-                padding: '10px 0',
-                fontFamily: 'var(--font-ui)',
-                fontWeight: 700,
-                fontSize: '0.8rem',
-                letterSpacing: '0.08em',
-                textTransform: 'uppercase',
-                background: 'transparent',
-                border: 'none',
-                borderBottom: `2px solid ${mode === m ? 'var(--green)' : 'transparent'}`,
-                color: mode === m ? 'var(--text)' : 'var(--text-faint)',
-                cursor: 'pointer',
-                transition: 'all 0.18s',
-                marginBottom: -1,
-              }}>
+              style={{ flex: 1, padding: '10px 0', fontFamily: 'var(--font-ui)', fontWeight: 700, fontSize: '0.8rem', letterSpacing: '0.08em', textTransform: 'uppercase', background: 'transparent', border: 'none', borderBottom: `2px solid ${mode === m ? 'var(--green)' : 'transparent'}`, color: mode === m ? 'var(--text)' : 'var(--text-faint)', cursor: 'pointer', transition: 'all 0.18s', marginBottom: -1 }}>
               {m === 'login' ? 'Entrar' : 'Cadastrar'}
             </button>
           ))}
         </div>
 
-        {/* Campos */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 20 }}>
           {mode === 'registro' && (
             <div>
@@ -231,41 +250,22 @@ function Auth({ onSuccess }: { onSuccess: () => void }) {
           <div>
             <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', letterSpacing: '0.1em', textTransform: 'uppercase', display: 'block', marginBottom: 6 }}>Senha</label>
             <div style={{ position: 'relative' }}>
-              <input className="input" type={showPass ? 'text' : 'password'} placeholder="••••••••"
-                value={senha} onChange={e => setSenha(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && submit()}
-                style={{ paddingRight: 48 }} />
-              <button onClick={() => setShowPass(v => !v)}
-                style={{
-                  position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)',
-                  background: 'none', border: 'none', cursor: 'pointer',
-                  color: 'var(--text-faint)', fontSize: '0.9rem', padding: 4,
-                }}>
-                {showPass ? '🙈' : '👁'}
+              <input className="input" type={showPass ? 'text' : 'password'} placeholder="••••••••" value={senha} onChange={e => setSenha(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()} style={{ paddingRight: 48 }} />
+              <button onClick={() => setShowPass(v => !v)} style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', fontSize: '0.9rem', padding: 4 }}>
+                {showPass ? 'ocultar' : 'ver'}
               </button>
             </div>
           </div>
         </div>
 
-        {error && (
-          <div style={{
-            background: 'rgba(255,23,68,0.08)',
-            border: '1px solid rgba(255,23,68,0.3)',
-            borderRadius: 8,
-            padding: '10px 14px',
-            fontSize: '0.82rem',
-            color: 'var(--red)',
-            marginBottom: 16,
-          }}>{error}</div>
-        )}
+        {error && <div style={{ background: 'rgba(255,23,68,0.08)', border: '1px solid rgba(255,23,68,0.3)', borderRadius: 8, padding: '10px 14px', fontSize: '0.82rem', color: 'var(--red)', marginBottom: 16 }}>{error}</div>}
 
-        <button className="btn btn-green" style={{ width: '100%', height: 50, fontSize: '0.95rem' }}
-          onClick={submit} disabled={loading}>
+        <button className="btn btn-green" style={{ width: '100%', height: 50, fontSize: '0.95rem' }} onClick={submit} disabled={loading}>
           {loading ? <><span className="spinner" />{mode === 'login' ? 'Entrando...' : 'Criando conta...'}</> : mode === 'login' ? 'Entrar' : 'Criar conta'}
         </button>
 
         <p style={{ textAlign: 'center', fontSize: '0.68rem', color: 'var(--text-faint)', marginTop: 24, lineHeight: 1.7 }}>
-          Uma conta por dispositivo.<br />Seus dados são protegidos pela LGPD.
+          Uma conta por dispositivo. Dados protegidos pela LGPD.
         </p>
       </div>
     </div>
@@ -274,9 +274,9 @@ function Auth({ onSuccess }: { onSuccess: () => void }) {
 
 // ─── Modal Agendamento ────────────────────────────────────────────────────────
 
-function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }: {
+function AgendarModal({ session, usuario, stats, barbeiros, storeConfig, onClose, onSuccess }: {
   session: Session; usuario: Usuario | null; stats: Stats[]; barbeiros: BarbeiroDB[];
-  onClose: () => void; onSuccess: () => void;
+  storeConfig: StoreConfig; onClose: () => void; onSuccess: () => void;
 }) {
   const [step, setStep] = useState<Step>('unidade');
   const [unidadeId, setUnidadeId] = useState('');
@@ -289,9 +289,11 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const unidade = UNIDADES.find(u => u.id === unidadeId);
+  const unidades = storeConfig.unidades.filter(u => u.ativo);
+  const servicos = storeConfig.servicos.filter(s => s.ativo);
+  const unidade = unidades.find(u => u.id === unidadeId);
   const barbeiro = barbeiros.find(b => b.id === barbeiroId);
-  const servico = SERVICOS.find(s => s.id === servicoId);
+  const servico = servicos.find(s => s.id === servicoId);
   const horarios = unidade ? gerarHorarios(unidade.horario.abertura, unidade.horario.fechamento) : [];
   const minDate = new Date().toISOString().split('T')[0];
 
@@ -309,8 +311,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
     setLoading(true); setError('');
     try {
       const res = await fetch('/api/agendamentos', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'criar', barbeiro_id: barbeiroId, unidade_id: unidadeId, servico: servico?.nome, data, horario }),
       });
       const d = await res.json();
@@ -326,7 +327,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
           <div style={{ marginBottom: 24 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
               <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem', letterSpacing: '0.04em', color: 'var(--green)' }}>AGENDAR</span>
-              <button className="btn btn-ghost" style={{ padding: '6px 12px', fontSize: '1.2rem' }} onClick={onClose}>✕</button>
+              <button className="btn btn-ghost" style={{ padding: '6px 12px' }} onClick={onClose}>x</button>
             </div>
             <div style={{ display: 'flex', gap: 4 }}>
               {[1, 2, 3, 4, 5].map(n => (
@@ -335,9 +336,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
                 </div>
               ))}
             </div>
-            <p style={{ fontSize: '0.72rem', color: 'var(--text-faint)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>
-              PASSO {Math.min(stepN, 5)} / 5
-            </p>
+            <p style={{ fontSize: '0.72rem', color: 'var(--text-faint)', marginTop: 6, fontFamily: 'var(--font-mono)' }}>PASSO {Math.min(stepN, 5)} / 5</p>
           </div>
         )}
 
@@ -345,7 +344,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
           <div className="anim-in">
             <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem', marginBottom: 20 }}>UNIDADE</h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              {UNIDADES.map(u => {
+              {unidades.map(u => {
                 const st = getUnidadeStatus(u);
                 return (
                   <button key={u.id} className="card card-green"
@@ -382,11 +381,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
                     style={{ padding: '16px 20px', textAlign: 'left', cursor: 'pointer', width: '100%', background: 'var(--surface)', border: '1px solid var(--border)' }}
                     onClick={() => { setBarbeiroId(bid); setStep('servico'); }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--surface3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', overflow: 'hidden', flexShrink: 0 }}>
-                        {b.photo_url
-                          ? <img src={b.photo_url} alt={b.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          : b.emoji}
-                      </div>
+                      <Avatar src={b.photo_url} nome={b.nome} size={48} />
                       <div style={{ flex: 1 }}>
                         <p style={{ fontWeight: 700 }}>{b.nome}</p>
                         <Stars value={Math.round(stat?.mediaEstrelas || 0)} readonly />
@@ -410,7 +405,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
               <h2 style={{ fontFamily: 'var(--font-display)', fontSize: '2rem' }}>CORTE</h2>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {SERVICOS.map(s => (
+              {servicos.map(s => (
                 <button key={s.id} className="card card-yellow"
                   style={{ padding: '14px 18px', textAlign: 'left', cursor: 'pointer', width: '100%', background: 'var(--surface)', border: '1px solid var(--border)' }}
                   onClick={() => { setServicoId(s.id); setStep('data'); }}>
@@ -446,14 +441,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
                     const busy = ocupados.includes(h);
                     return (
                       <button key={h} disabled={busy} onClick={() => { setHorario(h); setStep('termos'); }}
-                        style={{
-                          padding: '10px 6px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 700,
-                          fontFamily: 'var(--font-mono)', cursor: busy ? 'not-allowed' : 'pointer',
-                          border: '1px solid', background: busy ? 'transparent' : horario === h ? 'var(--green)' : 'var(--surface2)',
-                          color: busy ? 'var(--text-faint)' : horario === h ? '#000' : 'var(--text)',
-                          borderColor: busy ? 'var(--border)' : horario === h ? 'var(--green)' : 'var(--border)',
-                          textDecoration: busy ? 'line-through' : 'none', transition: 'all 0.15s',
-                        }}>{h}</button>
+                        style={{ padding: '10px 6px', borderRadius: 8, fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', cursor: busy ? 'not-allowed' : 'pointer', border: '1px solid', background: busy ? 'transparent' : horario === h ? 'var(--green)' : 'var(--surface2)', color: busy ? 'var(--text-faint)' : horario === h ? '#000' : 'var(--text)', borderColor: busy ? 'var(--border)' : horario === h ? 'var(--green)' : 'var(--border)', textDecoration: busy ? 'line-through' : 'none', transition: 'all 0.15s' }}>{h}</button>
                     );
                   })}
                 </div>
@@ -489,7 +477,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }
 
         {step === 'sucesso' && (
           <div className="anim-in" style={{ textAlign: 'center', padding: '20px 0' }}>
-            <div style={{ fontSize: '4rem', marginBottom: 16 }}>✅</div>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(0,200,83,0.15)', border: '2px solid var(--green)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', fontSize: '1.8rem', color: 'var(--green)' }}>✓</div>
             <p style={{ fontFamily: 'var(--font-display)', fontSize: '2.5rem', color: 'var(--green)', marginBottom: 8 }}>AGENDADO!</p>
             <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem', marginBottom: 6 }}>{barbeiro?.nome} · {servico?.nome}</p>
             <p style={{ color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', fontSize: '0.82rem', marginBottom: 24 }}>
@@ -511,9 +499,10 @@ const SLOT_ACCENTS = [
   { color: '#ff1744', glow: 'rgba(255,23,68,0.2)', border: 'rgba(255,23,68,0.35)' },
 ];
 
-function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar, onRefresh }: {
+function Dashboard({ session, usuario, stats, agendamentos, barbeiros, storeConfig, onAgendar, onRefresh }: {
   session: Session; usuario: Usuario | null; stats: Stats[];
-  agendamentos: Agendamento[]; barbeiros: BarbeiroDB[]; onAgendar: () => void; onRefresh: () => void;
+  agendamentos: Agendamento[]; barbeiros: BarbeiroDB[]; storeConfig: StoreConfig;
+  onAgendar: () => void; onRefresh: () => void;
 }) {
   const [avaliacoes, setAvaliacoes] = useState<Record<string, number>>({});
   const [savingAv, setSavingAv] = useState<string | null>(null);
@@ -543,30 +532,41 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
   const hoje_ag = agendamentos.find(a => a.data === hoje && a.status !== 'cancelado');
 
   const getBarbeiro = (id: string) => barbeiros.find(b => b.id === id);
-  const getUnidade = (id: string) => UNIDADES.find(u => u.id === id);
+  const getUnidade = (id: string) => storeConfig.unidades.find(u => u.id === id);
 
   const statusBadge: Record<string, string> = { confirmado: 'badge-green', pendente: 'badge-yellow', cancelado: 'badge-red' };
 
   const top3 = [...barbeiros].map(b => ({ ...b, stat: stats.find(s => s.barbeiroId === b.id) }))
     .sort((a, b) => (b.stat?.mediaEstrelas || 0) - (a.stat?.mediaEstrelas || 0)).slice(0, 3);
 
+  const displayName = usuario?.username ? `@${usuario.username}` : session.nome.split(' ')[0];
+
   return (
     <div>
       <div className="anim-up" style={{ marginBottom: 36 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-          <div>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 2 }}>one love, one cut</p>
-            <p style={{ fontWeight: 800, fontSize: '1.15rem' }}>
-              {session.nome.split(' ')[0]}
-              {usuario && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--yellow)', marginLeft: 10, fontWeight: 400 }}>★ {usuario.pontos}pts</span>}
-            </p>
-            <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: ROLE_COLOR[session.role] }}>
-              {ROLE_LABEL[session.role]}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <Avatar src={usuario?.foto_url} nome={session.nome} size={44} />
+            <div>
+              <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 2 }}>
+                {storeConfig.slogan}
+              </p>
+              <p style={{ fontWeight: 800, fontSize: '1.05rem' }}>
+                {displayName}
+                {usuario && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--yellow)', marginLeft: 10, fontWeight: 400 }}>★ {usuario.pontos}pts</span>}
+              </p>
+              <span style={{ fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', color: ROLE_COLOR[session.role] }}>
+                {ROLE_LABEL[session.role]}
+              </span>
+            </div>
           </div>
           <div style={{ textAlign: 'right' }}>
-            <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.9rem', lineHeight: 1, color: 'var(--text-faint)' }}>REGGAE</p>
-            <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.9rem', lineHeight: 1, color: 'var(--green)', textShadow: '0 0 24px rgba(0,200,83,0.5)' }}>CHARM</p>
+            <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', lineHeight: 1, color: 'var(--text-faint)' }}>
+              {storeConfig.nome_loja.split(' ')[0]}
+            </p>
+            <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', lineHeight: 1, color: 'var(--green)', textShadow: '0 0 24px rgba(0,200,83,0.5)' }}>
+              {storeConfig.nome_loja.split(' ').slice(1).join(' ') || 'CHARM'}
+            </p>
           </div>
         </div>
         <div className="rasta-bar" style={{ borderRadius: 2 }} />
@@ -576,7 +576,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
       <div className="anim-up d-1" style={{ marginBottom: 28 }}>
         <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>Unidades</p>
         <div className="unidades-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-          {UNIDADES.map((u, i) => {
+          {storeConfig.unidades.filter(u => u.ativo).map((u, i) => {
             const st = getUnidadeStatus(u);
             const accentColors = ['var(--green)', 'var(--yellow)', 'var(--red)', '#a78bfa'];
             const accent = accentColors[i];
@@ -584,7 +584,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
               <div key={u.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderTop: `2px solid ${accent}`, borderRadius: '0 0 12px 12px', padding: '12px 12px 14px', position: 'relative', overflow: 'hidden' }}>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 40, background: `linear-gradient(to bottom, ${accent}18, transparent)`, pointerEvents: 'none' }} />
                 <p style={{ fontSize: '0.6rem', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>{u.bairro}</p>
-                <p style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 8, lineHeight: 1.2 }}>{u.nome.replace('Reggae Charm ', '')}</p>
+                <p style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 8, lineHeight: 1.2 }}>{u.nome.replace(storeConfig.nome_loja + ' ', '')}</p>
                 {st.aberto ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 6px var(--green)' }} />
@@ -603,7 +603,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
       <div className="anim-up d-2" style={{ marginBottom: 32 }}>
         {hoje_ag ? (
           <div style={{ background: 'var(--surface)', border: '1px solid rgba(0,200,83,0.4)', borderLeft: '3px solid var(--green)', borderRadius: 14, padding: '18px 22px' }}>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--green)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>▸ corte hoje</p>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--green)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>corte hoje</p>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
                 <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', lineHeight: 1 }}>{getBarbeiro(hoje_ag.barbeiro_id)?.nome}</p>
@@ -619,7 +619,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
             <div style={{ position: 'absolute', inset: 0, backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.06) 10px, rgba(0,0,0,0.06) 20px)', pointerEvents: 'none' }} />
             <div style={{ position: 'relative', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <span style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.4rem, 5vw, 2rem)', letterSpacing: '0.06em', color: '#000' }}>AGENDAR HORÁRIO</span>
-              <span style={{ fontSize: '1.8rem' }}>✂️</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', color: '#000', opacity: 0.5 }}>→</span>
             </div>
           </button>
         )}
@@ -637,14 +637,12 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
             const media = b.stat?.mediaEstrelas || 0;
             const total = b.stat?.totalAvaliacoes || 0;
             return (
-              <div key={b.id} style={{ background: 'var(--surface)', border: `1px solid ${acc.border}`, borderRadius: 16, padding: '20px 16px 18px', position: 'relative', overflow: 'hidden' }}
+              <div key={b.id} style={{ background: 'var(--surface)', border: `1px solid ${acc.border}`, borderRadius: 16, padding: '20px 16px 18px', position: 'relative', overflow: 'hidden', transition: 'transform 0.2s, box-shadow 0.2s' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 32px ${acc.glow}`; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}>
                 <div style={{ position: 'absolute', top: 10, right: 10, fontFamily: 'var(--font-display)', fontSize: '1.4rem', color: acc.color, opacity: 0.25 }}>#{i + 1}</div>
-                <div style={{ width: 48, height: 48, borderRadius: '50%', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', background: `${acc.color}22`, border: `1px solid ${acc.border}`, overflow: 'hidden' }}>
-                  {b.photo_url
-                    ? <img src={b.photo_url} alt={b.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : b.emoji}
+                <div style={{ marginBottom: 12 }}>
+                  <Avatar src={b.photo_url} nome={b.nome} size={48} accent={acc.color} />
                 </div>
                 <p style={{ fontWeight: 800, fontSize: '0.88rem', marginBottom: 2 }}>{b.nome.split(' ')[0]}</p>
                 <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginBottom: 10 }}>{b.nome.split(' ').slice(1).join(' ')}</p>
@@ -672,7 +670,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontSize: '1.1rem' }}>{b?.emoji}</span>
+                          <Avatar src={b?.photo_url} nome={b?.nome || '?'} size={28} />
                           <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>{b?.nome}</p>
                           <span className={'badge ' + (statusBadge[a.status] || 'badge-gray')}>{a.status}</span>
                         </div>
@@ -708,7 +706,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                          <span style={{ fontSize: '1rem' }}>{b?.emoji}</span>
+                          <Avatar src={b?.photo_url} nome={b?.nome || '?'} size={28} />
                           <p style={{ fontWeight: 600, fontSize: '0.85rem' }}>{b?.nome}</p>
                           <span className={'badge ' + (statusBadge[a.status] || 'badge-gray')}>{a.status}</span>
                         </div>
@@ -731,7 +729,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
 
         {agendamentos.length === 0 && (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-faint)' }}>
-            <p style={{ fontSize: '2rem', marginBottom: 8 }}>✂️</p>
+            <div style={{ width: 56, height: 56, borderRadius: 14, background: 'var(--surface2)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px', fontFamily: 'var(--font-display)', fontSize: '1.4rem', color: 'var(--text-faint)' }}>RC</div>
             <p style={{ fontSize: '0.9rem' }}>Nenhum agendamento ainda</p>
             <button className="btn btn-green" style={{ marginTop: 16 }} onClick={onAgendar}>Agendar agora</button>
           </div>
@@ -743,8 +741,9 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar
 
 // ─── Configurações ────────────────────────────────────────────────────────────
 
-function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
-  session: Session; usuario: Usuario | null; barbeiros: BarbeiroDB[]; onUpdate: () => void; onLogout: () => void;
+function Configuracoes({ session, usuario, barbeiros, storeConfig, onUpdate, onLogout }: {
+  session: Session; usuario: Usuario | null; barbeiros: BarbeiroDB[];
+  storeConfig: StoreConfig; onUpdate: () => void; onLogout: () => void;
 }) {
   const [tema, setTema] = useState<'dark' | 'light'>(usuario?.tema || 'dark');
   const [barbeiroFav, setBarbeiroFav] = useState(usuario?.barbeiro_favorito || '');
@@ -760,12 +759,45 @@ function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
   const [senhaOk, setSenhaOk] = useState(false);
   const [savingSenha, setSavingSenha] = useState(false);
 
+  // Perfil
+  const [nomeEdit, setNomeEdit] = useState(session.nome);
+  const [usernameEdit, setUsernameEdit] = useState(usuario?.username || '');
+  const [perfilError, setPerfilError] = useState('');
+  const [perfilOk, setPerfilOk] = useState(false);
+  const [savingPerfil, setSavingPerfil] = useState(false);
+
+  // Foto de perfil
+  const [fotoPreview, setFotoPreview] = useState<string | null>(usuario?.foto_url || null);
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [savingFoto, setSavingFoto] = useState(false);
+  const fotoRef = useRef<HTMLInputElement>(null);
+
   const horarios = ['07:00','07:30','08:00','08:30','09:00','09:30','10:00','10:30','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','16:00','16:30','17:00','17:30','18:00'];
 
   async function salvarPrefs() {
     setSaving(true);
     await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'prefs', tema, barbeiro_favorito: barbeiroFav || null, servico_favorito: servicoFav || null, horario_favorito: horarioFav || null, unidade_favorita: unidadeFav || null }) });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2500); onUpdate();
+  }
+
+  async function salvarPerfil() {
+    setPerfilError(''); setPerfilOk(false); setSavingPerfil(true);
+    const res = await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'perfil', nome: nomeEdit, username: usernameEdit }) });
+    const d = await res.json();
+    setSavingPerfil(false);
+    if (!res.ok) { setPerfilError(d.error || 'Erro'); return; }
+    setPerfilOk(true); setTimeout(() => setPerfilOk(false), 2500); onUpdate();
+  }
+
+  async function uploadFoto() {
+    if (!fotoFile) return;
+    setSavingFoto(true);
+    const form = new FormData();
+    form.append('foto', fotoFile);
+    const res = await fetch('/api/usuarios', { method: 'POST', body: form });
+    const d = await res.json();
+    setSavingFoto(false);
+    if (res.ok && d.foto_url) { setFotoPreview(d.foto_url); setFotoFile(null); onUpdate(); }
   }
 
   async function alterarSenha() {
@@ -802,18 +834,58 @@ function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 6vw, 3.5rem)' }}>CONFIGURAÇÕES</h1>
       </div>
 
-      <S title="Conta">
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: '0.88rem', color: 'var(--text-dim)' }}>Nome</span>
-          <span style={{ fontWeight: 700 }}>{session.nome}</span>
+      {/* Foto de perfil */}
+      <S title="Foto de perfil">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+          <Avatar src={fotoPreview} nome={session.nome} size={72} />
+          <div>
+            <p style={{ fontSize: '0.88rem', fontWeight: 600, marginBottom: 4 }}>{session.nome}</p>
+            {usuario?.username && <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--green)' }}>@{usuario.username}</p>}
+          </div>
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-          <span style={{ fontSize: '0.88rem', color: 'var(--text-dim)' }}>E-mail</span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-dim)' }}>{session.email}</span>
+        <input ref={fotoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => {
+          const f = e.target.files?.[0];
+          if (f) { setFotoFile(f); setFotoPreview(URL.createObjectURL(f)); }
+        }} />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => fotoRef.current?.click()}>
+            {fotoPreview ? 'Trocar foto' : 'Adicionar foto'}
+          </button>
+          {fotoFile && (
+            <button className="btn btn-green" onClick={uploadFoto} disabled={savingFoto}>
+              {savingFoto ? <><span className="spinner" />Enviando...</> : 'Salvar'}
+            </button>
+          )}
         </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '0.88rem', color: 'var(--text-dim)' }}>Nível</span>
-          <span style={{ fontWeight: 700, color: ROLE_COLOR[session.role] }}>{ROLE_LABEL[session.role]}</span>
+      </S>
+
+      <S title="Perfil">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Nome</label>
+            <input className="input" value={nomeEdit} onChange={e => setNomeEdit(e.target.value)} />
+          </div>
+          <div>
+            <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Username (@)</label>
+            <div style={{ position: 'relative' }}>
+              <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', color: 'var(--green)', fontFamily: 'var(--font-mono)', fontSize: '0.9rem' }}>@</span>
+              <input className="input" value={usernameEdit} onChange={e => setUsernameEdit(e.target.value.replace(/^@/, ''))} placeholder="seuusername" style={{ paddingLeft: 30, fontFamily: 'var(--font-mono)' }} />
+            </div>
+            <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: 4 }}>3-30 caracteres: letras, números, . ou _</p>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 4 }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>E-mail</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-faint)' }}>{session.email}</span>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.78rem', color: 'var(--text-dim)' }}>Nível</span>
+            <span style={{ fontWeight: 700, color: ROLE_COLOR[session.role] }}>{ROLE_LABEL[session.role]}</span>
+          </div>
+          {perfilError && <p style={{ color: 'var(--red)', fontSize: '0.8rem' }}>{perfilError}</p>}
+          {perfilOk && <p style={{ color: 'var(--green)', fontSize: '0.8rem' }}>Perfil atualizado</p>}
+          <button className="btn btn-green" onClick={salvarPerfil} disabled={savingPerfil}>
+            {savingPerfil ? <><span className="spinner" />Salvando...</> : 'Salvar perfil'}
+          </button>
         </div>
       </S>
 
@@ -823,7 +895,7 @@ function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
           <div style={{ display: 'flex', gap: 8 }}>
             {(['dark', 'light'] as const).map(t => (
               <button key={t} onClick={() => setTema(t)} className="btn" style={{ padding: '6px 14px', fontSize: '0.8rem', background: tema === t ? 'var(--green)' : 'var(--surface2)', color: tema === t ? '#000' : 'var(--text-dim)', border: '1px solid ' + (tema === t ? 'var(--green)' : 'var(--border)') }}>
-                {t === 'dark' ? '🌑 Escuro' : '☀️ Claro'}
+                {t === 'dark' ? 'Escuro' : 'Claro'}
               </button>
             ))}
           </div>
@@ -832,10 +904,11 @@ function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
 
       <S title="Preferências">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[['Barbeiro favorito', barbeiroFav, setBarbeiroFav, barbeiros.map(b => ({ v: b.id, l: `${b.emoji} ${b.nome}` }))],
-            ['Serviço favorito', servicoFav, setServicoFav, SERVICOS.map(s => ({ v: s.id, l: s.nome }))],
+          {[
+            ['Barbeiro favorito', barbeiroFav, setBarbeiroFav, barbeiros.map(b => ({ v: b.id, l: b.nome }))],
+            ['Serviço favorito', servicoFav, setServicoFav, storeConfig.servicos.filter(s => s.ativo).map(s => ({ v: s.id, l: s.nome }))],
             ['Horário favorito', horarioFav, setHorarioFav, horarios.map(h => ({ v: h, l: h }))],
-            ['Unidade favorita', unidadeFav, setUnidadeFav, UNIDADES.map(u => ({ v: u.id, l: u.nome }))],
+            ['Unidade favorita', unidadeFav, setUnidadeFav, storeConfig.unidades.filter(u => u.ativo).map(u => ({ v: u.id, l: u.nome }))],
           ].map(([label, val, setter, opts]: any) => (
             <div key={label}>
               <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>{label}</label>
@@ -846,7 +919,7 @@ function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
             </div>
           ))}
           <button className="btn btn-green" onClick={salvarPrefs} disabled={saving} style={{ marginTop: 6 }}>
-            {saving ? <><span className="spinner" />Salvando...</> : saved ? '✓ Salvo!' : 'Salvar preferências'}
+            {saving ? <><span className="spinner" />Salvando...</> : saved ? 'Salvo!' : 'Salvar preferências'}
           </button>
         </div>
       </S>
@@ -857,7 +930,7 @@ function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
           <input type="password" className="input" placeholder="Nova senha" value={senhaNova} onChange={e => setSenhaNova(e.target.value)} />
           <input type="password" className="input" placeholder="Confirmar nova senha" value={senhaConfirm} onChange={e => setSenhaConfirm(e.target.value)} />
           {senhaError && <p style={{ color: 'var(--red)', fontSize: '0.8rem' }}>{senhaError}</p>}
-          {senhaOk && <p style={{ color: 'var(--green)', fontSize: '0.8rem' }}>✓ Senha alterada!</p>}
+          {senhaOk && <p style={{ color: 'var(--green)', fontSize: '0.8rem' }}>Senha alterada com sucesso</p>}
           <button className="btn btn-outline" onClick={alterarSenha} disabled={savingSenha}>
             {savingSenha ? <><span className="spinner" />Salvando...</> : 'Alterar senha'}
           </button>
@@ -874,12 +947,14 @@ function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
-function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session: Session; barbeiros: BarbeiroDB[]; onRefresh: () => void }) {
+function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfigInit, onRefresh }: {
+  session: Session; barbeiros: BarbeiroDB[]; storeConfig: StoreConfig; onRefresh: () => void;
+}) {
   const [usuarios, setUsuarios] = useState<(Usuario & { _messageId?: string })[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [barbeiros, setBarbeiros] = useState<BarbeiroDB[]>(barbeirosInit);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'usuarios' | 'agendamentos' | 'barbeiros'>('usuarios');
+  const [activeTab, setActiveTab] = useState<'usuarios' | 'agendamentos' | 'barbeiros' | 'loja'>('usuarios');
   const [promoTarget, setPromoTarget] = useState<string | null>(null);
   const [novoRole, setNovoRole] = useState<UserRole>('barbeiro');
   const [novoBarbeiroId, setNovoBarbeiroId] = useState('');
@@ -888,11 +963,10 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [filtroBarbeiro, setFiltroBarbeiro] = useState('');
 
-  // Barbeiro form state
+  // Barbeiro form
   const [bFormOpen, setBFormOpen] = useState(false);
   const [bEditId, setBEditId] = useState<string | null>(null);
   const [bNome, setBNome] = useState('');
-  const [bEmoji, setBEmoji] = useState('✂️');
   const [bEspecialidades, setBEspecialidades] = useState('');
   const [bUnidades, setBUnidades] = useState<string[]>([]);
   const [bFotoFile, setBFotoFile] = useState<File | null>(null);
@@ -900,6 +974,12 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
   const [bSaving, setBSaving] = useState(false);
   const [bError, setBError] = useState('');
   const fotoInputRef = useRef<HTMLInputElement>(null);
+
+  // Store config state
+  const [storeConfig, setStoreConfig] = useState<StoreConfig>(storeConfigInit);
+  const [storeSaving, setStoreSaving] = useState(false);
+  const [storeSaved, setStoreSaved] = useState(false);
+  const [storeError, setStoreError] = useState('');
 
   const loadAdmin = useCallback(async () => {
     setLoading(true);
@@ -918,16 +998,8 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
 
   async function promover(uid: string) {
     setSaving(true);
-    await fetch('/api/usuarios', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'promover', usuario_id: uid, novo_role: novoRole, barbeiro_id: novoBarbeiroId || null, unidade_id: novaUnidadeId || null }),
-    });
-    setSaving(false);
-    setPromoTarget(null);
-    setNovoRole('barbeiro');
-    setNovoBarbeiroId('');
-    setNovaUnidadeId('');
+    await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'promover', usuario_id: uid, novo_role: novoRole, barbeiro_id: novoBarbeiroId || null, unidade_id: novaUnidadeId || null }) });
+    setSaving(false); setPromoTarget(null); setNovoRole('barbeiro'); setNovoBarbeiroId(''); setNovaUnidadeId('');
     loadAdmin();
   }
 
@@ -942,6 +1014,77 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
     loadAdmin();
   }
 
+  async function salvarBarbeiro() {
+    setBError(''); setBSaving(true);
+    try {
+      const especialidades = bEspecialidades.split(',').map(s => s.trim()).filter(Boolean);
+      if (bEditId) {
+        await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: bEditId, nome: bNome, especialidades, unidades: bUnidades }) });
+        if (bFotoFile) {
+          const form = new FormData();
+          form.append('barbeiro_id', bEditId);
+          form.append('foto', bFotoFile);
+          await fetch('/api/barbeiros', { method: 'POST', body: form });
+        }
+      } else {
+        const res = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'criar', nome: bNome, especialidades, unidades: bUnidades }) });
+        const d = await res.json();
+        if (bFotoFile && d.barbeiro?.id) {
+          const form = new FormData();
+          form.append('barbeiro_id', d.barbeiro.id);
+          form.append('foto', bFotoFile);
+          await fetch('/api/barbeiros', { method: 'POST', body: form });
+        }
+      }
+      setBFormOpen(false); setBEditId(null); setBNome(''); setBEspecialidades(''); setBUnidades([]); setBFotoFile(null); setBFotoPreview(null);
+      loadAdmin(); onRefresh();
+    } catch { setBError('Erro ao salvar'); } finally { setBSaving(false); }
+  }
+
+  async function salvarLoja() {
+    setStoreError(''); setStoreSaving(true);
+    const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(storeConfig) });
+    const d = await res.json();
+    setStoreSaving(false);
+    if (!res.ok) { setStoreError(d.error || 'Erro'); return; }
+    setStoreSaved(true); setTimeout(() => setStoreSaved(false), 2500);
+    setStoreConfig(d.config); onRefresh();
+  }
+
+  function updateUnidade(idx: number, field: string, value: unknown) {
+    setStoreConfig(prev => {
+      const unidades = [...prev.unidades];
+      unidades[idx] = { ...unidades[idx], [field]: value };
+      return { ...prev, unidades };
+    });
+  }
+
+  function updateServico(idx: number, field: string, value: unknown) {
+    setStoreConfig(prev => {
+      const servicos = [...prev.servicos];
+      servicos[idx] = { ...servicos[idx], [field]: value };
+      return { ...prev, servicos };
+    });
+  }
+
+  function addUnidade() {
+    const id = 'u' + Date.now();
+    setStoreConfig(prev => ({
+      ...prev,
+      unidades: [...prev.unidades, {
+        id, nome: prev.nome_loja + ' Nova Unidade', endereco: '', bairro: '', cidade: '', horario: { abertura: 8, fechamento: 20 }, dias_semana: [1,2,3,4,5,6], barbeiros: [], ativo: true,
+      }],
+    }));
+  }
+
+  function addServico() {
+    const id = 's' + Date.now();
+    setStoreConfig(prev => ({
+      ...prev,
+      servicos: [...prev.servicos, { id, nome: 'Novo Serviço', valor: 30, duracao: 30, descricao: '', ativo: true }],
+    }));
+  }
+
   const rolesDisponiveis: UserRole[] = session.role === 'dono'
     ? ['cliente', 'barbeiro', 'gerente', 'dono']
     : ['cliente', 'barbeiro', 'gerente'];
@@ -954,6 +1097,8 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
 
   const statusBadge: Record<string, string> = { confirmado: 'badge-green', pendente: 'badge-yellow', cancelado: 'badge-red' };
 
+  const isDono = session.role === 'dono';
+
   return (
     <div>
       <div className="anim-up" style={{ marginBottom: 28 }}>
@@ -964,7 +1109,6 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
         <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 6vw, 3rem)' }}>PAINEL ADMIN</h1>
       </div>
 
-      {/* Stats rápidas */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginBottom: 24 }}>
         {[
           { label: 'Usuários', valor: usuarios.length, color: 'var(--green)' },
@@ -978,13 +1122,11 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
         ))}
       </div>
 
-      {/* Tabs */}
-      <div className="tab-bar" style={{ marginBottom: 20 }}>
+      <div className="tab-bar" style={{ marginBottom: 20, flexWrap: 'wrap' }}>
         <button className={'tab' + (activeTab === 'usuarios' ? ' active' : '')} onClick={() => setActiveTab('usuarios')}>Usuários</button>
         <button className={'tab' + (activeTab === 'agendamentos' ? ' active' : '')} onClick={() => setActiveTab('agendamentos')}>Agendamentos</button>
-        {canDo(session.role, 'acesso_admin') && (
-          <button className={'tab' + (activeTab === 'barbeiros' ? ' active' : '')} onClick={() => setActiveTab('barbeiros')}>✂️ Barbeiros</button>
-        )}
+        <button className={'tab' + (activeTab === 'barbeiros' ? ' active' : '')} onClick={() => setActiveTab('barbeiros')}>Barbeiros</button>
+        {isDono && <button className={'tab' + (activeTab === 'loja' ? ' active' : '')} onClick={() => setActiveTab('loja')}>Loja</button>}
       </div>
 
       {loading ? (
@@ -1001,401 +1143,313 @@ function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session:
             return (
               <div key={u.id} className="card" style={{ padding: '16px 18px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>{u.nome}</p>
-                      {isMe && <span className="badge badge-gray">você</span>}
-                    </div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>{u.email}</p>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      <span style={{ fontSize: '0.72rem', fontWeight: 700, color: ROLE_COLOR[u.role as UserRole], textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                        {ROLE_LABEL[u.role as UserRole]}
-                      </span>
-                      {u.barbeiro_id && <span className="badge badge-green">✂️ {barbeiros.find(b => b.id === u.barbeiro_id)?.nome || u.barbeiro_id}</span>}
-                      {u.unidade_id && <span className="badge badge-gray">📍 {UNIDADES.find(un => un.id === u.unidade_id)?.bairro || u.unidade_id}</span>}
-                      <span className="badge badge-yellow">★ {u.pontos || 0}pts</span>
+                  <div style={{ display: 'flex', gap: 12, flex: 1 }}>
+                    <Avatar src={u.foto_url} nome={u.nome} size={40} accent={ROLE_COLOR[u.role as UserRole]} />
+                    <div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 2 }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.9rem' }}>{u.nome}</span>
+                        {u.username && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--green)' }}>@{u.username}</span>}
+                        <span className="badge" style={{ color: ROLE_COLOR[u.role as UserRole], borderColor: ROLE_COLOR[u.role as UserRole] + '44', background: ROLE_COLOR[u.role as UserRole] + '11' }}>{ROLE_LABEL[u.role as UserRole]}</span>
+                        {isMe && <span className="badge badge-gray">Você</span>}
+                        {u.barbeiro_id && <span className="badge badge-green">{barbeiros.find(b => b.id === u.barbeiro_id)?.nome || u.barbeiro_id}</span>}
+                      </div>
+                      <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-faint)' }}>{u.email}</p>
                     </div>
                   </div>
                   {podeMexer && !bloqueado && (
-                    <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.76rem', flexShrink: 0 }}
-                      onClick={() => { setPromoTarget(u.id); setNovoRole(u.role as UserRole); setNovoBarbeiroId(u.barbeiro_id || ''); setNovaUnidadeId(u.unidade_id || ''); }}>
-                      Editar
+                    <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setPromoTarget(u.id === promoTarget ? null : u.id)}>
+                      {promoTarget === u.id ? 'Cancelar' : 'Alterar'}
                     </button>
                   )}
                 </div>
 
-                {/* Modal inline de promoção */}
                 {promoTarget === u.id && (
-                  <div style={{ marginTop: 16, padding: 16, background: 'var(--surface2)', borderRadius: 12, border: '1px solid var(--border-bright)' }}>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 12 }}>Alterar nível de {u.nome}</p>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      <div>
-                        <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Função</label>
-                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                          {rolesDisponiveis.map(r => (
-                            <button key={r} onClick={() => setNovoRole(r)} style={{
-                              padding: '6px 14px', borderRadius: 8, fontSize: '0.78rem', fontWeight: 700,
-                              cursor: 'pointer', border: '1px solid', fontFamily: 'var(--font-ui)',
-                              background: novoRole === r ? ROLE_COLOR[r] : 'transparent',
-                              color: novoRole === r ? (r === 'cliente' ? '#000' : '#000') : ROLE_COLOR[r],
-                              borderColor: ROLE_COLOR[r],
-                            }}>
-                              {ROLE_LABEL[r]}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      {(novoRole === 'barbeiro') && (
-                        <div>
-                          <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Vincular ao barbeiro</label>
-                          <select className="input" value={novoBarbeiroId} onChange={e => setNovoBarbeiroId(e.target.value)}>
-                            <option value="">Nenhum</option>
-                            {barbeiros.map(b => <option key={b.id} value={b.id}>{b.emoji} {b.nome}</option>)}
-                          </select>
-                        </div>
-                      )}
-                      {(novoRole === 'gerente' || novoRole === 'barbeiro') && (
-                        <div>
-                          <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Unidade responsável</label>
-                          <select className="input" value={novaUnidadeId} onChange={e => setNovaUnidadeId(e.target.value)}>
-                            <option value="">Todas</option>
-                            {UNIDADES.map(un => <option key={un.id} value={un.id}>{un.nome}</option>)}
-                          </select>
-                        </div>
-                      )}
-                      <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                        <button className="btn btn-green" style={{ flex: 1 }} disabled={saving} onClick={() => promover(u.id)}>
-                          {saving ? <><span className="spinner" />Salvando...</> : 'Confirmar'}
-                        </button>
-                        <button className="btn btn-ghost" onClick={() => setPromoTarget(null)}>Cancelar</button>
-                      </div>
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div>
+                      <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Novo cargo</label>
+                      <select className="input" value={novoRole} onChange={e => setNovoRole(e.target.value as UserRole)}>
+                        {rolesDisponiveis.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+                      </select>
                     </div>
+                    {(novoRole === 'barbeiro') && (
+                      <div>
+                        <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Barbeiro vinculado</label>
+                        <select className="input" value={novoBarbeiroId} onChange={e => setNovoBarbeiroId(e.target.value)}>
+                          <option value="">Nenhum</option>
+                          {barbeiros.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    {(novoRole === 'barbeiro' || novoRole === 'gerente') && (
+                      <div>
+                        <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Unidade</label>
+                        <select className="input" value={novaUnidadeId} onChange={e => setNovaUnidadeId(e.target.value)}>
+                          <option value="">Nenhuma</option>
+                          {storeConfig.unidades.map(un => <option key={un.id} value={un.id}>{un.nome}</option>)}
+                        </select>
+                      </div>
+                    )}
+                    <button className="btn btn-green" onClick={() => promover(u.id)} disabled={saving}>
+                      {saving ? <><span className="spinner" />Salvando...</> : 'Confirmar alteração'}
+                    </button>
                   </div>
                 )}
               </div>
             );
           })}
         </div>
+
       ) : activeTab === 'agendamentos' ? (
         <div>
-          {/* Filtros */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             <select className="input" style={{ flex: 1, minWidth: 120 }} value={filtroStatus} onChange={e => setFiltroStatus(e.target.value)}>
-              <option value="todos">Todos status</option>
+              <option value="todos">Todos os status</option>
               <option value="pendente">Pendente</option>
               <option value="confirmado">Confirmado</option>
               <option value="cancelado">Cancelado</option>
             </select>
             <select className="input" style={{ flex: 1, minWidth: 120 }} value={filtroBarbeiro} onChange={e => setFiltroBarbeiro(e.target.value)}>
-              <option value="">Todos barbeiros</option>
+              <option value="">Todos os barbeiros</option>
               {barbeiros.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
             </select>
           </div>
-
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {agsFiltrados.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-faint)' }}>Nenhum agendamento encontrado</div>
-            )}
             {agsFiltrados.map(a => {
               const b = barbeiros.find(x => x.id === a.barbeiro_id);
-              const u = UNIDADES.find(x => x.id === a.unidade_id);
-              const cliente = usuarios.find(x => x.id === a.usuario_id);
+              const u = storeConfig.unidades.find(x => x.id === a.unidade_id);
+              const user = usuarios.find(x => x.id === a.usuario_id);
               return (
                 <div key={a.id} className="card" style={{ padding: '14px 18px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
-                        <span>{b?.emoji}</span>
-                        <p style={{ fontWeight: 700, fontSize: '0.88rem' }}>{b?.nome}</p>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, flexWrap: 'wrap' }}>
+                        <span style={{ fontWeight: 700, fontSize: '0.88rem' }}>{b?.nome}</span>
                         <span className={'badge ' + (statusBadge[a.status] || 'badge-gray')}>{a.status}</span>
                       </div>
-                      <p style={{ fontSize: '0.75rem', color: 'var(--text-dim)', marginBottom: 2 }}>{a.servico}</p>
-                      <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)' }}>
-                        {new Date(a.data + 'T12:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })} · {a.horario} · {u?.bairro}
+                      <p style={{ fontSize: '0.78rem', color: 'var(--text-dim)', marginBottom: 2 }}>{a.servico}</p>
+                      <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-faint)' }}>
+                        {new Date(a.data + 'T12:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: '2-digit' })} · {a.horario}
                       </p>
-                      {cliente && (
+                      {user && (
                         <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: 4 }}>
-                          👤 {cliente.nome}
+                          {user.username ? `@${user.username}` : user.nome} · {u?.bairro}
                         </p>
                       )}
                     </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0, alignItems: 'flex-end' }}>
-                      <p style={{ color: 'var(--green)', fontWeight: 700, fontSize: '0.88rem' }}>R${a.valor}</p>
-                      {a.status === 'pendente' && (
-                        <button className="btn btn-green" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={() => confirmarAg(a.id)}>Confirmar</button>
-                      )}
-                      {a.status !== 'cancelado' && (
-                        <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={() => cancelarAg(a.id)}>Cancelar</button>
-                      )}
+                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                      <p style={{ fontWeight: 700, color: 'var(--green)', marginBottom: 6 }}>R${a.valor}</p>
+                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                        {a.status === 'pendente' && <button className="btn btn-green" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={() => confirmarAg(a.id)}>Confirmar</button>}
+                        {a.status !== 'cancelado' && <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={() => cancelarAg(a.id)}>Cancelar</button>}
+                      </div>
                     </div>
                   </div>
                 </div>
               );
             })}
+            {agsFiltrados.length === 0 && (
+              <p style={{ textAlign: 'center', color: 'var(--text-faint)', padding: 24, fontSize: '0.88rem' }}>Nenhum agendamento encontrado</p>
+            )}
           </div>
         </div>
+
       ) : activeTab === 'barbeiros' ? (
         <div>
-          {/* Header + botão novo */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
-              {barbeiros.length} barbeiro{barbeiros.length !== 1 ? 's' : ''} cadastrado{barbeiros.length !== 1 ? 's' : ''}
-            </p>
-            <button className="btn btn-green" style={{ padding: '6px 14px', fontSize: '0.8rem' }}
-              onClick={() => {
-                setBEditId(null); setBNome(''); setBEmoji('✂️'); setBEspecialidades('');
-                setBUnidades([]); setBFotoFile(null); setBFotoPreview(null); setBError('');
-                setBFormOpen(true);
-              }}>
-              + Novo barbeiro
-            </button>
-          </div>
+          <button className="btn btn-green" style={{ width: '100%', marginBottom: 16 }} onClick={() => { setBFormOpen(true); setBEditId(null); setBNome(''); setBEspecialidades(''); setBUnidades([]); setBFotoFile(null); setBFotoPreview(null); }}>
+            + Novo Barbeiro
+          </button>
 
-          {/* Formulário criar/editar */}
           {bFormOpen && (
-            <div className="card anim-in" style={{ padding: '20px 18px', marginBottom: 16, border: '1px solid var(--green)', background: 'rgba(0,200,83,0.04)' }}>
-              <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', marginBottom: 16 }}>
-                {bEditId ? 'EDITAR BARBEIRO' : 'NOVO BARBEIRO'}
-              </p>
-
-              {/* Foto de perfil */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-                <div
-                  onClick={() => fotoInputRef.current?.click()}
-                  style={{
-                    width: 72, height: 72, borderRadius: '50%', background: 'var(--surface3)',
-                    border: '2px dashed var(--border)', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', cursor: 'pointer', overflow: 'hidden',
-                    flexShrink: 0, transition: 'border-color 0.2s',
-                  }}
-                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--green)'}
-                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'}
-                >
-                  {bFotoPreview
-                    ? <img src={bFotoPreview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    : <span style={{ fontSize: '1.8rem' }}>{bEmoji || '📷'}</span>}
-                </div>
+            <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 16 }}>{bEditId ? 'Editar barbeiro' : 'Novo barbeiro'}</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <input className="input" placeholder="Nome" value={bNome} onChange={e => setBNome(e.target.value)} />
+                <input className="input" placeholder="Especialidades (sep. por vírgula)" value={bEspecialidades} onChange={e => setBEspecialidades(e.target.value)} />
                 <div>
-                  <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.78rem', marginBottom: 4 }}
-                    onClick={() => fotoInputRef.current?.click()}>
-                    {bFotoPreview ? '🔄 Trocar foto' : '📷 Adicionar foto'}
-                  </button>
-                  {bFotoPreview && (
-                    <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.78rem', marginLeft: 6, color: 'var(--red)' }}
-                      onClick={() => { setBFotoFile(null); setBFotoPreview(null); }}>
-                      ✕ Remover
-                    </button>
-                  )}
-                  <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginTop: 4 }}>
-                    JPG, PNG ou WEBP · máx 8MB<br />
-                    A URL é renovada automaticamente a cada acesso
-                  </p>
-                </div>
-                <input
-                  ref={fotoInputRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  style={{ display: 'none' }}
-                  onChange={e => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    setBFotoFile(file);
-                    const reader = new FileReader();
-                    reader.onload = ev => setBFotoPreview(ev.target?.result as string);
-                    reader.readAsDataURL(file);
-                  }}
-                />
-              </div>
-
-              {/* Campos */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 10 }}>
-                  <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Nome *</label>
-                    <input className="input" placeholder="Ex: João Silva" value={bNome} onChange={e => setBNome(e.target.value)} style={{ width: '100%' }} />
-                  </div>
-                  <div style={{ width: 80 }}>
-                    <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Emoji</label>
-                    <input className="input" placeholder="✂️" value={bEmoji} onChange={e => setBEmoji(e.target.value)} style={{ width: '100%', textAlign: 'center', fontSize: '1.2rem' }} />
-                  </div>
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>
-                    Especialidades <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>(separadas por vírgula)</span>
-                  </label>
-                  <input className="input" placeholder="Degradê, Barba, Pézinho" value={bEspecialidades} onChange={e => setBEspecialidades(e.target.value)} style={{ width: '100%' }} />
-                </div>
-
-                <div>
-                  <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 6 }}>Unidades</label>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 6 }}>Unidades</label>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                    {UNIDADES.map(u => (
-                      <button key={u.id}
-                        className={'btn' + (bUnidades.includes(u.id) ? ' btn-green' : ' btn-ghost')}
-                        style={{ padding: '5px 12px', fontSize: '0.75rem' }}
-                        onClick={() => setBUnidades(prev =>
-                          prev.includes(u.id) ? prev.filter(x => x !== u.id) : [...prev, u.id]
-                        )}>
-                        {u.bairro}
-                      </button>
+                    {storeConfig.unidades.map(u => (
+                      <label key={u.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.82rem' }}>
+                        <input type="checkbox" checked={bUnidades.includes(u.id)} onChange={e => setBUnidades(p => e.target.checked ? [...p, u.id] : p.filter(x => x !== u.id))} style={{ accentColor: 'var(--green)' }} />
+                        {u.nome.replace(storeConfig.nome_loja + ' ', '')}
+                      </label>
                     ))}
                   </div>
                 </div>
-
-                {bError && <p style={{ color: 'var(--red)', fontSize: '0.78rem' }}>{bError}</p>}
-
-                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
-                  <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setBFormOpen(false); setBEditId(null); }}>
-                    Cancelar
+                <div>
+                  <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 6 }}>Foto</label>
+                  {bFotoPreview && <img src={bFotoPreview} alt="preview" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', marginBottom: 8 }} />}
+                  <input ref={fotoInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) { setBFotoFile(f); setBFotoPreview(URL.createObjectURL(f)); } }} />
+                  <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => fotoInputRef.current?.click()}>
+                    {bFotoPreview ? 'Trocar foto' : 'Adicionar foto'}
                   </button>
-                  <button className="btn btn-green" style={{ flex: 2 }} disabled={bSaving}
-                    onClick={async () => {
-                      if (!bNome.trim()) { setBError('Nome é obrigatório'); return; }
-                      setBSaving(true); setBError('');
-                      try {
-                        let barbeiroId = bEditId;
-
-                        if (bEditId) {
-                          // Editar existente
-                          await fetch('/api/barbeiros', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              action: 'editar',
-                              barbeiro_id: bEditId,
-                              nome: bNome,
-                              emoji: bEmoji,
-                              especialidades: bEspecialidades.split(',').map(s => s.trim()).filter(Boolean),
-                              unidades: bUnidades,
-                            }),
-                          });
-                        } else {
-                          // Criar novo
-                          const res = await fetch('/api/barbeiros', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                              action: 'criar',
-                              nome: bNome,
-                              emoji: bEmoji,
-                              especialidades: bEspecialidades.split(',').map(s => s.trim()).filter(Boolean),
-                              unidades: bUnidades,
-                            }),
-                          });
-                          const d = await res.json();
-                          barbeiroId = d.barbeiro?.id;
-                        }
-
-                        // Upload de foto (se selecionada)
-                        if (bFotoFile && barbeiroId) {
-                          const fd = new FormData();
-                          fd.append('barbeiro_id', barbeiroId);
-                          fd.append('foto', bFotoFile);
-                          await fetch('/api/barbeiros', { method: 'POST', body: fd });
-                        }
-
-                        await loadAdmin();
-                        onRefresh();
-                        setBFormOpen(false); setBEditId(null);
-                      } catch (e: any) {
-                        setBError(e.message || 'Erro ao salvar');
-                      } finally {
-                        setBSaving(false);
-                      }
-                    }}>
-                    {bSaving ? <span className="spinner" /> : bEditId ? 'Salvar alterações' : 'Criar barbeiro'}
+                </div>
+                {bError && <p style={{ color: 'var(--red)', fontSize: '0.8rem' }}>{bError}</p>}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-green" style={{ flex: 1 }} onClick={salvarBarbeiro} disabled={bSaving}>
+                    {bSaving ? <><span className="spinner" />Salvando...</> : 'Salvar'}
                   </button>
+                  <button className="btn btn-outline" onClick={() => { setBFormOpen(false); setBEditId(null); }}>Cancelar</button>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Lista de barbeiros */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {barbeiros.length === 0 && !bFormOpen && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-faint)' }}>
-                <p style={{ fontSize: '2rem', marginBottom: 8 }}>✂️</p>
-                <p style={{ fontSize: '0.9rem' }}>Nenhum barbeiro cadastrado ainda</p>
-                <p style={{ fontSize: '0.75rem', marginTop: 4 }}>Clique em "Novo barbeiro" para começar</p>
+            {barbeiros.map(b => (
+              <div key={b.id} className="card" style={{ padding: '16px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <Avatar src={b.photo_url} nome={b.nome} size={48} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', marginBottom: 4 }}>
+                      <span style={{ fontWeight: 700 }}>{b.nome}</span>
+                      {!b.ativo && <span className="badge badge-red">Inativo</span>}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {b.especialidades.map(e => <span key={e} className="badge badge-gray">{e}</span>)}
+                    </div>
+                    <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: 4 }}>
+                      {b.unidades.map(uid => storeConfig.unidades.find(u => u.id === uid)?.bairro || uid).join(', ')}
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={() => {
+                      setBFormOpen(true);
+                      setBEditId(b.id);
+                      setBNome(b.nome);
+                      setBEspecialidades(b.especialidades.join(', '));
+                      setBUnidades([...b.unidades]);
+                      setBFotoPreview(b.photo_url || null);
+                    }}>Editar</button>
+                    <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={async () => {
+                      if (!confirm(b.ativo ? 'Desativar barbeiro?' : 'Reativar barbeiro?')) return;
+                      await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: b.id, ativo: !b.ativo }) });
+                      loadAdmin(); onRefresh();
+                    }}>{b.ativo ? 'Desativar' : 'Reativar'}</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            {barbeiros.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '32px 20px', color: 'var(--text-faint)' }}>
+                <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.4rem', marginBottom: 8 }}>SEM BARBEIROS</p>
+                <p style={{ fontSize: '0.88rem' }}>Cadastre o primeiro profissional acima</p>
               </div>
             )}
-            {barbeiros.map(b => (
-              <div key={b.id} className="card" style={{ padding: '14px 18px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                  {/* Avatar */}
-                  <div style={{
-                    width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
-                    background: 'var(--surface3)', display: 'flex', alignItems: 'center',
-                    justifyContent: 'center', fontSize: '1.4rem', overflow: 'hidden',
-                    border: '1px solid var(--border)',
-                  }}>
-                    {b.photo_url
-                      ? <img src={b.photo_url} alt={b.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : b.emoji}
-                  </div>
+          </div>
+        </div>
 
-                  {/* Info */}
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
-                      <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>{b.nome}</p>
-                      <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{b.id}</span>
+      ) : activeTab === 'loja' && isDono ? (
+        <div>
+          <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+            <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-faint)', marginBottom: 16 }}>Identidade da loja</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Nome da loja</label>
+                <input className="input" value={storeConfig.nome_loja} onChange={e => setStoreConfig(prev => ({ ...prev, nome_loja: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Slogan</label>
+                <input className="input" value={storeConfig.slogan} onChange={e => setStoreConfig(prev => ({ ...prev, slogan: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 8 }}>Cor principal</label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {(['green', 'yellow', 'red', 'purple', 'blue'] as const).map(cor => (
+                    <button key={cor} onClick={() => setStoreConfig(prev => ({ ...prev, tema_cor: cor }))}
+                      style={{ width: 36, height: 36, borderRadius: '50%', background: TEMA_COR_MAP[cor], border: storeConfig.tema_cor === cor ? `3px solid white` : '3px solid transparent', cursor: 'pointer', transition: 'all 0.15s' }} />
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Unidades */}
+          <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-faint)' }}>Unidades</p>
+              <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.78rem' }} onClick={addUnidade}>+ Adicionar</button>
+            </div>
+            {storeConfig.unidades.map((u, idx) => (
+              <div key={u.id} style={{ borderBottom: idx < storeConfig.unidades.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 16, marginBottom: 16 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10, gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <input className="input" value={u.nome} onChange={e => updateUnidade(idx, 'nome', e.target.value)} style={{ fontSize: '0.9rem', fontWeight: 700 }} />
+                      <button onClick={() => updateUnidade(idx, 'ativo', !u.ativo)} className={'btn ' + (u.ativo ? 'btn-outline' : 'btn-green')} style={{ padding: '6px 12px', fontSize: '0.72rem', flexShrink: 0 }}>
+                        {u.ativo ? 'Ativo' : 'Inativo'}
+                      </button>
                     </div>
-                    {b.especialidades.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
-                        {b.especialidades.map(e => <span key={e} className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{e}</span>)}
-                      </div>
-                    )}
-                    {b.unidades.length > 0 && (
-                      <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)' }}>
-                        📍 {b.unidades.map(uid => UNIDADES.find(u => u.id === uid)?.bairro || uid).join(' · ')}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Ações */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
-                    <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.75rem' }}
-                      onClick={() => {
-                        setBEditId(b.id);
-                        setBNome(b.nome);
-                        setBEmoji(b.emoji);
-                        setBEspecialidades(b.especialidades.join(', '));
-                        setBUnidades(b.unidades);
-                        setBFotoFile(null);
-                        setBFotoPreview(b.photo_url || null);
-                        setBError('');
-                        setBFormOpen(true);
-                        // Scroll up
-                        window.scrollTo({ top: 0, behavior: 'smooth' });
-                      }}>
-                      ✏️ Editar
-                    </button>
-                    <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.75rem', color: 'var(--red)' }}
-                      onClick={async () => {
-                        if (!confirm(`Desativar ${b.nome}? Histórico de agendamentos é preservado.`)) return;
-                        await fetch('/api/barbeiros', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ action: 'deletar', barbeiro_id: b.id }),
-                        });
-                        await loadAdmin();
-                        onRefresh();
-                      }}>
-                      🗑 Desativar
-                    </button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                      <input className="input" placeholder="Endereço" value={u.endereco} onChange={e => updateUnidade(idx, 'endereco', e.target.value)} style={{ fontSize: '0.82rem' }} />
+                      <input className="input" placeholder="Bairro" value={u.bairro} onChange={e => updateUnidade(idx, 'bairro', e.target.value)} style={{ fontSize: '0.82rem' }} />
+                      <input className="input" placeholder="Cidade" value={u.cidade} onChange={e => updateUnidade(idx, 'cidade', e.target.value)} style={{ fontSize: '0.82rem' }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 8 }}>
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-faint)' }}>Abre:</span>
+                      <input type="number" className="input" value={u.horario.abertura} min={0} max={23} onChange={e => updateUnidade(idx, 'horario', { ...u.horario, abertura: +e.target.value })} style={{ width: 70 }} />
+                      <span style={{ fontSize: '0.78rem', color: 'var(--text-faint)' }}>Fecha:</span>
+                      <input type="number" className="input" value={u.horario.fechamento} min={0} max={24} onChange={e => updateUnidade(idx, 'horario', { ...u.horario, fechamento: +e.target.value })} style={{ width: 70 }} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      {DIAS_NOMES.map((dia, dIdx) => (
+                        <label key={dIdx} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+                          <input type="checkbox" checked={u.dias_semana.includes(dIdx)} onChange={e => {
+                            const dias = e.target.checked ? [...u.dias_semana, dIdx].sort() : u.dias_semana.filter(d => d !== dIdx);
+                            updateUnidade(idx, 'dias_semana', dias);
+                          }} style={{ accentColor: 'var(--green)' }} />
+                          <span style={{ fontSize: '0.65rem', color: u.dias_semana.includes(dIdx) ? 'var(--green)' : 'var(--text-faint)' }}>{dia}</span>
+                        </label>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
             ))}
           </div>
+
+          {/* Serviços */}
+          <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-faint)' }}>Serviços</p>
+              <button className="btn btn-outline" style={{ padding: '6px 14px', fontSize: '0.78rem' }} onClick={addServico}>+ Adicionar</button>
+            </div>
+            {storeConfig.servicos.map((s, idx) => (
+              <div key={s.id} style={{ borderBottom: idx < storeConfig.servicos.length - 1 ? '1px solid var(--border)' : 'none', paddingBottom: 14, marginBottom: 14 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr auto', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                  <input className="input" value={s.nome} onChange={e => updateServico(idx, 'nome', e.target.value)} style={{ fontWeight: 700 }} />
+                  <button onClick={() => updateServico(idx, 'ativo', !s.ativo)} className={'btn ' + (s.ativo ? 'btn-outline' : 'btn-green')} style={{ padding: '6px 12px', fontSize: '0.72rem' }}>
+                    {s.ativo ? 'Ativo' : 'Inativo'}
+                  </button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+                  <div>
+                    <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 3 }}>Valor (R$)</label>
+                    <input type="number" className="input" value={s.valor} min={0} onChange={e => updateServico(idx, 'valor', +e.target.value)} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 3 }}>Duração (min)</label>
+                    <input type="number" className="input" value={s.duracao} min={10} step={5} onChange={e => updateServico(idx, 'duracao', +e.target.value)} />
+                  </div>
+                </div>
+                <input className="input" placeholder="Descrição" value={s.descricao} onChange={e => updateServico(idx, 'descricao', e.target.value)} style={{ fontSize: '0.82rem' }} />
+              </div>
+            ))}
+          </div>
+
+          {storeError && <p style={{ color: 'var(--red)', fontSize: '0.8rem', marginBottom: 10 }}>{storeError}</p>}
+          {storeSaved && <p style={{ color: 'var(--green)', fontSize: '0.8rem', marginBottom: 10 }}>Configurações salvas com sucesso</p>}
+          <button className="btn btn-green" style={{ width: '100%' }} onClick={salvarLoja} disabled={storeSaving}>
+            {storeSaving ? <><span className="spinner" />Salvando loja...</> : 'Salvar todas as configurações'}
+          </button>
         </div>
       ) : null}
     </div>
   );
 }
 
-// ─── App Principal ────────────────────────────────────────────────────────────
+// ─── App Root ─────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [tab, setTab] = useState<AppTab>('dashboard');
@@ -1404,6 +1458,7 @@ export default function App() {
   const [stats, setStats] = useState<Stats[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [barbeiros, setBarbeiros] = useState<BarbeiroDB[]>([]);
+  const [storeConfig, setStoreConfig] = useState<StoreConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [agendarOpen, setAgendarOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -1411,12 +1466,13 @@ export default function App() {
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
-    const [sessRes, userRes, agRes, statsRes, barbRes] = await Promise.all([
+    const [sessRes, userRes, agRes, statsRes, barbRes, configRes] = await Promise.all([
       fetch('/api/auth'),
       fetch('/api/usuarios'),
       fetch('/api/agendamentos?action=meus'),
       fetch('/api/agendamentos?action=stats'),
       fetch('/api/barbeiros'),
+      fetch('/api/config'),
     ]);
 
     const sessData = await sessRes.json();
@@ -1425,6 +1481,7 @@ export default function App() {
     if (agRes.ok) { const d = await agRes.json(); setAgendamentos(d.agendamentos || []); }
     if (statsRes.ok) { const d = await statsRes.json(); setStats(d.stats || []); }
     if (barbRes.ok) { const d = await barbRes.json(); setBarbeiros(d.barbeiros || []); }
+    if (configRes.ok) { const d = await configRes.json(); setStoreConfig(d.config || null); }
     setLoading(false);
   }
 
@@ -1443,8 +1500,15 @@ export default function App() {
   }
 
   if (!authed || !session) return <Auth onSuccess={loadAll} />;
+  if (!storeConfig) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="spinner spinner-lg" /></div>;
 
   const temAdmin = canDo(session.role, 'acesso_admin');
+
+  const TAB_LABELS: Record<string, string> = {
+    dashboard: 'Dashboard',
+    configuracoes: 'Perfil',
+    admin: session.role === 'dono' ? 'Dono' : session.role === 'gerente' ? 'Gerente' : 'Admin',
+  };
 
   return (
     <div style={{ minHeight: '100vh' }}>
@@ -1453,13 +1517,13 @@ export default function App() {
 
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '40px 16px 120px', position: 'relative', zIndex: 1 }}>
         {tab === 'dashboard' && (
-          <Dashboard session={session} usuario={usuario} stats={stats} agendamentos={agendamentos} barbeiros={barbeiros} onAgendar={() => setAgendarOpen(true)} onRefresh={loadAll} />
+          <Dashboard session={session} usuario={usuario} stats={stats} agendamentos={agendamentos} barbeiros={barbeiros} storeConfig={storeConfig} onAgendar={() => setAgendarOpen(true)} onRefresh={loadAll} />
         )}
         {tab === 'configuracoes' && (
-          <Configuracoes session={session} usuario={usuario} barbeiros={barbeiros} onUpdate={loadAll} onLogout={logout} />
+          <Configuracoes session={session} usuario={usuario} barbeiros={barbeiros} storeConfig={storeConfig} onUpdate={loadAll} onLogout={logout} />
         )}
         {tab === 'admin' && temAdmin && (
-          <AdminPanel session={session} barbeiros={barbeiros} onRefresh={loadAll} />
+          <AdminPanel session={session} barbeiros={barbeiros} storeConfig={storeConfig} onRefresh={loadAll} />
         )}
       </div>
 
@@ -1468,21 +1532,24 @@ export default function App() {
         <div className="rasta-bar" style={{ position: 'absolute', top: 0, left: 0, right: 0, opacity: 0.5 }} />
         <div style={{ maxWidth: 480, margin: '0 auto', display: 'flex', gap: 4, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, padding: 4 }}>
           {([
-            { id: 'dashboard', label: 'Dashboard' },
-            { id: 'configuracoes', label: 'Config' },
-            ...(temAdmin ? [{ id: 'admin', label: `Admin ${session.role === 'dono' ? '👑' : session.role === 'gerente' ? '⚡' : '✂️'}` }] : []),
+            { id: 'dashboard', label: TAB_LABELS.dashboard },
+            { id: 'configuracoes', label: TAB_LABELS.configuracoes },
+            ...(temAdmin ? [{ id: 'admin', label: TAB_LABELS.admin }] : []),
           ] as { id: AppTab; label: string }[]).map(t => (
             <button key={t.id} onClick={() => setTab(t.id)}
               className={'tab' + (tab === t.id ? ' active' : '')}
-              style={{ flex: 1 }}>
+              style={{ flex: 1, position: 'relative' }}>
               {t.label}
+              {t.id === 'admin' && session.role === 'dono' && (
+                <span style={{ position: 'absolute', top: 4, right: 6, width: 6, height: 6, borderRadius: '50%', background: 'var(--red)', boxShadow: '0 0 6px var(--red)' }} />
+              )}
             </button>
           ))}
         </div>
       </div>
 
       {agendarOpen && (
-        <AgendarModal session={session} usuario={usuario} stats={stats} barbeiros={barbeiros} onClose={() => setAgendarOpen(false)} onSuccess={loadAll} />
+        <AgendarModal session={session} usuario={usuario} stats={stats} barbeiros={barbeiros} storeConfig={storeConfig} onClose={() => setAgendarOpen(false)} onSuccess={loadAll} />
       )}
     </div>
   );
