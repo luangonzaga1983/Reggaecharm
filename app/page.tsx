@@ -390,6 +390,13 @@ function AgendarModal({ session, usuario, stats, onClose, onSuccess }: {
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
+// Accent colors per barber slot for visual distinction
+const SLOT_ACCENTS = [
+  { color: '#00c853', glow: 'rgba(0,200,83,0.25)', border: 'rgba(0,200,83,0.35)' },
+  { color: '#ffd600', glow: 'rgba(255,214,0,0.2)',  border: 'rgba(255,214,0,0.35)' },
+  { color: '#ff1744', glow: 'rgba(255,23,68,0.2)',  border: 'rgba(255,23,68,0.35)' },
+];
+
 function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh }: {
   session: Session;
   usuario: Usuario | null;
@@ -432,8 +439,6 @@ function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh
   const hoje = new Date().toISOString().split('T')[0];
   const proximos = agendamentos.filter(a => a.data >= hoje && a.status !== 'cancelado');
   const passados = agendamentos.filter(a => a.data < hoje || a.status === 'cancelado');
-
-  // Info do dia — próximo agendamento de hoje
   const hoje_ag = agendamentos.find(a => a.data === hoje && a.status !== 'cancelado');
 
   function getBarbeiro(id: string) { return BARBEIROS.find(b => b.id === id); }
@@ -445,104 +450,248 @@ function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh
     cancelado: 'badge-red',
   };
 
+  // Top 3 barbeiros por média de estrelas
+  const top3 = [...BARBEIROS]
+    .map(b => ({ ...b, stat: stats.find(s => s.barbeiroId === b.id) }))
+    .sort((a, b) => (b.stat?.mediaEstrelas || 0) - (a.stat?.mediaEstrelas || 0))
+    .slice(0, 3);
+
   return (
     <div>
-      {/* Hero header */}
-      <div className="anim-up" style={{ marginBottom: 32 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12 }}>
+      {/* ── HEADER ── */}
+      <div className="anim-up" style={{ marginBottom: 36 }}>
+        {/* Nome + pontos */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
-            <p style={{ fontSize: '0.72rem', color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.14em', fontFamily: 'var(--font-mono)', marginBottom: 4 }}>
-              ONE LOVE, ONE CUT
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-faint)', letterSpacing: '0.16em', textTransform: 'uppercase', marginBottom: 2 }}>
+              one love, one cut
             </p>
-            <h1 style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2.5rem, 8vw, 4.5rem)', lineHeight: 1, letterSpacing: '0.02em' }}>
-              <span style={{ display: 'block' }}>REGGAE</span>
-              <span style={{ display: 'block', color: 'var(--green)', textShadow: '0 0 30px rgba(0,200,83,0.4)' }}>CHARM</span>
-            </h1>
+            <p style={{ fontWeight: 800, fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+              {session.nome.split(' ')[0]}
+              {usuario && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--yellow)', marginLeft: 10, fontWeight: 400 }}>★ {usuario.pontos}pts</span>}
+            </p>
           </div>
+          {/* Marca */}
           <div style={{ textAlign: 'right' }}>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-faint)', marginBottom: 4 }}>Bem-vindo</p>
-            <p style={{ fontWeight: 700, fontSize: '1.1rem' }}>{session.nome.split(' ')[0]}</p>
-            {usuario && (
-              <p style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)', color: 'var(--yellow)', marginTop: 4 }}>⭐ {usuario.pontos} pts</p>
-            )}
+            <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.9rem', lineHeight: 1, letterSpacing: '0.06em' }}>
+              <span style={{ color: 'var(--text-faint)' }}>REGGAE</span>
+            </p>
+            <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.9rem', lineHeight: 1, letterSpacing: '0.06em', color: 'var(--green)', textShadow: '0 0 24px rgba(0,200,83,0.5)' }}>
+              CHARM
+            </p>
           </div>
         </div>
-
-        {/* Rasta bar */}
-        <div className="rasta-bar" style={{ marginTop: 16, borderRadius: 2, opacity: 0.7 }} />
+        <div className="rasta-bar" style={{ borderRadius: 2 }} />
       </div>
 
-      {/* Info do dia */}
-      <div className="anim-up d-1" style={{ marginBottom: 24 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12 }}>
-          {/* Unidades abertas */}
-          {UNIDADES.map(u => {
+      {/* ── UNIDADES — 4 em linha, scroll horizontal no mobile ── */}
+      <div className="anim-up d-1" style={{ marginBottom: 28 }}>
+        <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>
+          Unidades
+        </p>
+        <div className="unidades-grid" style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: 8,
+        }}>
+          {UNIDADES.map((u, i) => {
             const st = getUnidadeStatus(u);
+            const accentColors = ['var(--green)', 'var(--yellow)', 'var(--red)', '#a78bfa'];
+            const accent = accentColors[i];
             return (
-              <div key={u.id} className="card" style={{ padding: '14px 16px' }}>
-                <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginBottom: 4 }}>{u.bairro}</p>
-                <p style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: 6 }}>{u.nome.replace('Reggae Charm ', '')}</p>
-                {st.aberto
-                  ? <span className="open-indicator"><span className="dot-live" />{st.texto}</span>
-                  : <span className="closed-indicator">⏸ {st.texto}</span>}
+              <div
+                key={u.id}
+                style={{
+                  background: 'var(--surface)',
+                  border: '1px solid var(--border)',
+                  borderTop: `2px solid ${accent}`,
+                  borderRadius: '0 0 12px 12px',
+                  padding: '12px 12px 14px',
+                  minWidth: 0,
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'border-color 0.2s',
+                }}
+              >
+                {/* faint accent glow bg */}
+                <div style={{
+                  position: 'absolute', top: 0, left: 0, right: 0, height: 40,
+                  background: `linear-gradient(to bottom, ${accent}18, transparent)`,
+                  pointerEvents: 'none',
+                }} />
+                <p style={{ fontSize: '0.6rem', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
+                  {u.bairro}
+                </p>
+                <p style={{ fontWeight: 800, fontSize: '0.82rem', marginBottom: 8, lineHeight: 1.2 }}>
+                  {u.nome.replace('Reggae Charm ', '')}
+                </p>
+                {st.aberto ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--green)', boxShadow: '0 0 6px var(--green)', flexShrink: 0 }} />
+                    <span style={{ fontSize: '0.68rem', color: 'var(--green)', fontWeight: 600, lineHeight: 1 }}>{st.texto}</span>
+                  </div>
+                ) : (
+                  <span style={{ fontSize: '0.68rem', color: 'var(--text-faint)', fontWeight: 500 }}>{st.texto}</span>
+                )}
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* CTA Agendar */}
+      {/* ── CTA ── */}
       <div className="anim-up d-2" style={{ marginBottom: 32 }}>
         {hoje_ag ? (
-          <div className="card" style={{ padding: '20px 24px', border: '1px solid rgba(0,200,83,0.3)', boxShadow: 'var(--glow-green)' }}>
-            <p style={{ fontSize: '0.72rem', color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>Seu corte hoje</p>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{
+            background: 'var(--surface)',
+            border: '1px solid rgba(0,200,83,0.4)',
+            borderLeft: '3px solid var(--green)',
+            borderRadius: 14,
+            padding: '18px 22px',
+            boxShadow: '0 0 40px rgba(0,200,83,0.08)',
+          }}>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--green)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 10 }}>
+              ▸ corte hoje
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
               <div>
-                <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.6rem' }}>
-                  {getBarbeiro(hoje_ag.barbeiro_id)?.nome} · {hoje_ag.horario}
+                <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.8rem', lineHeight: 1 }}>
+                  {getBarbeiro(hoje_ag.barbeiro_id)?.nome}
                 </p>
-                <p style={{ color: 'var(--text-dim)', fontSize: '0.82rem', marginTop: 2 }}>
-                  {hoje_ag.servico} · {getUnidade(hoje_ag.unidade_id)?.bairro}
+                <p style={{ color: 'var(--text-dim)', fontSize: '0.82rem', marginTop: 4 }}>
+                  {hoje_ag.servico} · {hoje_ag.horario} · {getUnidade(hoje_ag.unidade_id)?.bairro}
                 </p>
               </div>
-              <span className={'badge ' + (statusBadge[hoje_ag.status] || 'badge-gray')}>{hoje_ag.status}</span>
+              <span className={'badge ' + (statusBadge[hoje_ag.status] || 'badge-gray')} style={{ fontSize: '0.7rem' }}>
+                {hoje_ag.status}
+              </span>
             </div>
           </div>
         ) : (
           <button
-            className="btn btn-green"
-            style={{ width: '100%', padding: '18px 32px', fontSize: '1rem', borderRadius: 14, position: 'relative', overflow: 'hidden' }}
             onClick={onAgendar}
+            style={{
+              width: '100%',
+              background: 'var(--green)',
+              border: 'none',
+              borderRadius: 14,
+              padding: '0',
+              cursor: 'pointer',
+              position: 'relative',
+              overflow: 'hidden',
+              display: 'block',
+              transition: 'transform 0.15s, box-shadow 0.15s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = '0 0 40px rgba(0,200,83,0.5)'; (e.currentTarget as HTMLButtonElement).style.transform = 'translateY(-1px)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.boxShadow = 'none'; (e.currentTarget as HTMLButtonElement).style.transform = 'none'; }}
           >
-            <span style={{ position: 'relative', zIndex: 1, fontFamily: 'var(--font-display)', fontSize: '1.4rem', letterSpacing: '0.06em' }}>
-              AGENDAR HORÁRIO ✂️
-            </span>
+            {/* Striped texture overlay */}
+            <div style={{
+              position: 'absolute', inset: 0,
+              backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 10px, rgba(0,0,0,0.06) 10px, rgba(0,0,0,0.06) 20px)',
+              pointerEvents: 'none',
+            }} />
+            <div style={{ position: 'relative', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(1.4rem, 5vw, 2rem)', letterSpacing: '0.06em', color: '#000', lineHeight: 1 }}>
+                AGENDAR HORÁRIO
+              </span>
+              <span style={{ fontSize: '1.8rem', lineHeight: 1 }}>✂️</span>
+            </div>
           </button>
         )}
       </div>
 
-      {/* Avaliação dos barbeiros */}
+      {/* ── TOP 3 BARBEIROS ── */}
       <div className="anim-up d-3" style={{ marginBottom: 32 }}>
-        <p style={{ fontSize: '0.72rem', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 14 }}>Barbeiros</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
-          {BARBEIROS.map(b => {
-            const stat = stats.find(s => s.barbeiroId === b.id);
-            const unNomes = b.unidades.map(uid => UNIDADES.find(u => u.id === uid)?.bairro).filter(Boolean);
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 14 }}>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+            Top Barbeiros
+          </p>
+          <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.6rem', color: 'var(--text-faint)' }}>por avaliação</p>
+        </div>
+
+        <div className="top3-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+          {top3.map((b, i) => {
+            const acc = SLOT_ACCENTS[i];
+            const media = b.stat?.mediaEstrelas || 0;
+            const total = b.stat?.totalAvaliacoes || 0;
+            const isFav = usuario?.barbeiro_favorito === b.id;
             return (
-              <div key={b.id} className="card card-hover" style={{ padding: '16px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'var(--surface3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.3rem', flexShrink: 0 }}>
+              <div
+                key={b.id}
+                style={{
+                  background: 'var(--surface)',
+                  border: `1px solid ${acc.border}`,
+                  borderRadius: 16,
+                  padding: '20px 16px 18px',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  transition: 'transform 0.2s, box-shadow 0.2s',
+                  cursor: 'default',
+                }}
+                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 32px ${acc.glow}`; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}
+              >
+                {/* Rank badge */}
+                <div style={{
+                  position: 'absolute', top: 10, right: 10,
+                  fontFamily: 'var(--font-display)', fontSize: '1.4rem', lineHeight: 1,
+                  color: acc.color, opacity: 0.25,
+                }}>#{i + 1}</div>
+
+                {/* Accent corner glow */}
+                <div style={{
+                  position: 'absolute', top: -20, left: -20, width: 80, height: 80,
+                  borderRadius: '50%',
+                  background: `radial-gradient(circle, ${acc.glow} 0%, transparent 70%)`,
+                  pointerEvents: 'none',
+                }} />
+
+                {/* Avatar */}
+                <div style={{
+                  width: 48, height: 48, borderRadius: '50%', marginBottom: 12,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '1.5rem',
+                  background: `linear-gradient(135deg, ${acc.color}22, ${acc.color}08)`,
+                  border: `1px solid ${acc.border}`,
+                }}>
                   {b.emoji}
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontWeight: 700, fontSize: '0.88rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{b.nome}</p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
-                    <Stars value={Math.round(stat?.mediaEstrelas || 0)} readonly />
-                    <span style={{ fontSize: '0.68rem', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)' }}>
-                      {stat?.mediaEstrelas ? stat.mediaEstrelas.toFixed(1) : '—'}
-                    </span>
+
+                {/* Name */}
+                <p style={{ fontWeight: 800, fontSize: '0.88rem', marginBottom: 2, lineHeight: 1.2 }}>
+                  {b.nome.split(' ')[0]}
+                </p>
+                <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginBottom: 10 }}>
+                  {b.nome.split(' ').slice(1).join(' ')}
+                </p>
+
+                {/* Rating */}
+                <div style={{ marginBottom: 6 }}>
+                  <div style={{ display: 'flex', gap: 2, marginBottom: 3 }}>
+                    {[1,2,3,4,5].map(n => (
+                      <span key={n} style={{ fontSize: '0.85rem', color: n <= Math.round(media) ? acc.color : 'var(--surface3)' }}>★</span>
+                    ))}
                   </div>
-                  <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginTop: 2 }}>{unNomes.join(', ')}</p>
+                  <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-faint)' }}>
+                    {media ? media.toFixed(1) : '—'} · {total} av.
+                  </p>
                 </div>
+
+                {/* Especialidades */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                  {b.especialidades.slice(0, 2).map(e => (
+                    <span key={e} style={{
+                      fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.06em',
+                      textTransform: 'uppercase', padding: '2px 6px', borderRadius: 4,
+                      background: `${acc.color}14`, color: acc.color, border: `1px solid ${acc.color}30`,
+                    }}>{e}</span>
+                  ))}
+                </div>
+
+                {isFav && (
+                  <div style={{ position: 'absolute', bottom: 10, right: 10, fontSize: '0.8rem' }}>⭐</div>
+                )}
               </div>
             );
           })}
@@ -553,7 +702,7 @@ function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh
       <div className="anim-up d-4">
         {proximos.length > 0 && (
           <div style={{ marginBottom: 24 }}>
-            <p style={{ fontSize: '0.72rem', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Próximos</p>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)', letterSpacing: '0.14em', textTransform: 'uppercase', marginBottom: 12 }}>Próximos</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {proximos.slice(0, 5).map(a => {
                 const b = getBarbeiro(a.barbeiro_id);
