@@ -138,3 +138,22 @@ select.input { appearance: none; background-image: url("data:image/svg+xml,%3Csv
 
 .open-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: var(--green); }
 .closed-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600; color: var(--red); }
+
+/* Unidades 4-col responsive */
+@media (max-width: 500px) {
+  .unidades-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+@media (max-width: 320px) {
+  .unidades-grid {
+    grid-template-columns: repeat(1, 1fr) !important;
+  }
+}
+
+/* Top3 barbeiros responsive */
+@media (max-width: 420px) {
+  .top3-grid {
+    grid-template-columns: repeat(1, 1fr) !important;
+  }
+}
