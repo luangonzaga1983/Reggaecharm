@@ -4,6 +4,7 @@
 const DISCORD_TOKEN = process.env.DISCORD_TOKEN!;
 const CHANNEL_USUARIOS = process.env.DISCORD_CHANNEL_USUARIOS!;
 const CHANNEL_AGENDAMENTOS = process.env.DISCORD_CHANNEL_AGENDAMENTOS!;
+const CHANNEL_BARBEIROS = process.env.DISCORD_CHANNEL_BARBEIROS!;
 const BASE_URL = 'https://discord.com/api/v10';
 
 const headers = {
@@ -60,6 +61,7 @@ async function editMessage(channelId: string, messageId: string, content: string
 interface DiscordMessage {
   id: string;
   content: string;
+  attachments?: Array<{ id: string; url: string; filename: string; content_type?: string }>;
 }
 
 export type UserRole = 'cliente' | 'barbeiro' | 'gerente' | 'dono';
@@ -210,5 +212,109 @@ export async function deleteUsuario(messageId: string): Promise<void> {
   await fetch(`${BASE_URL}/channels/${CHANNEL_USUARIOS}/messages/${messageId}`, {
     method: 'DELETE',
     headers,
+  });
+}
+
+// ─── Barbeiros dinâmicos ───────────────────────────────────────────────────────
+// Cada barbeiro é uma mensagem no CHANNEL_BARBEIROS.
+// A foto é salva como ATTACHMENT na própria mensagem (campo photo_message_id guarda
+// o id da mensagem que tem o attachment). No login/fetch, sempre buscamos a mensagem
+// atual para pegar a URL fresca — assim o link nunca expira.
+
+export interface BarbeiroDB {
+  id: string;
+  nome: string;
+  especialidades: string[];
+  unidades: string[];           // ids de unidade
+  emoji: string;
+  ativo: boolean;
+  photo_message_id?: string | null; // id da mensagem que contém o attachment da foto
+  photo_url?: string | null;        // URL fresca, resolvida em runtime, nunca persistida
+  _messageId?: string;
+}
+
+function parseBarbeiro(msg: DiscordMessage): BarbeiroDB | null {
+  try {
+    const data = JSON.parse(msg.content);
+    // Resolve URL da foto direto do attachment da mensagem atual (sempre fresco)
+    const photoUrl = msg.attachments?.[0]?.url ?? null;
+    return { ...data, photo_url: photoUrl, _messageId: msg.id };
+  } catch {
+    return null;
+  }
+}
+
+export async function getAllBarbeiros(): Promise<BarbeiroDB[]> {
+  const messages = await fetchAllMessages(CHANNEL_BARBEIROS);
+  return messages.map(parseBarbeiro).filter(Boolean) as BarbeiroDB[];
+}
+
+export async function getBarbeiroById(id: string): Promise<BarbeiroDB | null> {
+  const all = await getAllBarbeiros();
+  return all.find(b => b.id === id) || null;
+}
+
+// Cria barbeiro sem foto — retorna o objeto criado
+export async function createBarbeiro(barbeiro: Omit<BarbeiroDB, '_messageId' | 'photo_url'>): Promise<BarbeiroDB> {
+  const { photo_message_id, ...rest } = barbeiro;
+  const content = JSON.stringify({ ...rest, photo_message_id: null });
+  const msg = await postMessage(CHANNEL_BARBEIROS, content);
+  return { ...barbeiro, photo_url: null, _messageId: msg.id };
+}
+
+// Atualiza dados textuais do barbeiro (sem mudar foto)
+export async function updateBarbeiro(barbeiro: BarbeiroDB): Promise<void> {
+  if (!barbeiro._messageId) throw new Error('Missing barbeiro message ID');
+  const { _messageId, photo_url, ...data } = barbeiro;
+  await editMessage(CHANNEL_BARBEIROS, _messageId, JSON.stringify(data));
+}
+
+// Upload de foto: envia nova mensagem com o arquivo como attachment,
+// depois atualiza o campo photo_message_id do barbeiro para o id dessa mensagem.
+// Na próxima leitura, a URL é resolvida do attachment da mensagem de foto.
+// Como usamos a mensagem PRINCIPAL do barbeiro para guardar tudo, na verdade
+// fazemos upload via multipart e guardamos o attachment na própria mensagem do barbeiro.
+export async function uploadBarberPhoto(
+  barbeiroMessageId: string,
+  barbeiroData: BarbeiroDB,
+  fileBuffer: ArrayBuffer,
+  filename: string,
+  mimeType: string,
+): Promise<string> {
+  // Apaga a mensagem atual e recria com o attachment
+  // (Discord não permite PATCH com novo attachment — só via nova mensagem)
+  // Estratégia: DELETE + POST multipart com attachment + JSON no content
+  await fetch(`${BASE_URL}/channels/${CHANNEL_BARBEIROS}/messages/${barbeiroMessageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${DISCORD_TOKEN}` },
+  });
+
+  const { _messageId, photo_url, ...data } = barbeiroData;
+  const jsonContent = JSON.stringify({ ...data, photo_message_id: null });
+
+  const formData = new FormData();
+  formData.append('content', jsonContent);
+  formData.append('files[0]', new Blob([fileBuffer], { type: mimeType }), filename);
+
+  const res = await fetch(`${BASE_URL}/channels/${CHANNEL_BARBEIROS}/messages`, {
+    method: 'POST',
+    headers: { Authorization: `Bot ${DISCORD_TOKEN}` },
+    body: formData,
+  });
+
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Discord upload failed: ${res.status} ${err}`);
+  }
+
+  const newMsg: DiscordMessage = await res.json();
+  const freshUrl = newMsg.attachments?.[0]?.url ?? '';
+  return freshUrl; // Retorna URL fresca (o caller deve atualizar seu estado local)
+}
+
+export async function deleteBarbeiro(messageId: string): Promise<void> {
+  await fetch(`${BASE_URL}/channels/${CHANNEL_BARBEIROS}/messages/${messageId}`, {
+    method: 'DELETE',
+    headers: { Authorization: `Bot ${DISCORD_TOKEN}` },
   });
 }

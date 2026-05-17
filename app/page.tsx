@@ -1,10 +1,21 @@
 'use client';
-import { useState, useEffect, useCallback } from 'react';
-import { UNIDADES, BARBEIROS, SERVICOS, getUnidadeStatus, gerarHorarios } from '@/lib/data';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { UNIDADES, SERVICOS, getUnidadeStatus, gerarHorarios } from '@/lib/data';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type UserRole = 'cliente' | 'barbeiro' | 'gerente' | 'dono';
+
+interface BarbeiroDB {
+  id: string;
+  nome: string;
+  especialidades: string[];
+  unidades: string[];
+  emoji: string;
+  ativo: boolean;
+  photo_url?: string | null;
+  _messageId?: string;
+}
 
 interface Session {
   id: string;
@@ -263,8 +274,8 @@ function Auth({ onSuccess }: { onSuccess: () => void }) {
 
 // ─── Modal Agendamento ────────────────────────────────────────────────────────
 
-function AgendarModal({ session, usuario, stats, onClose, onSuccess }: {
-  session: Session; usuario: Usuario | null; stats: Stats[];
+function AgendarModal({ session, usuario, stats, barbeiros, onClose, onSuccess }: {
+  session: Session; usuario: Usuario | null; stats: Stats[]; barbeiros: BarbeiroDB[];
   onClose: () => void; onSuccess: () => void;
 }) {
   const [step, setStep] = useState<Step>('unidade');
@@ -279,7 +290,7 @@ function AgendarModal({ session, usuario, stats, onClose, onSuccess }: {
   const [error, setError] = useState('');
 
   const unidade = UNIDADES.find(u => u.id === unidadeId);
-  const barbeiro = BARBEIROS.find(b => b.id === barbeiroId);
+  const barbeiro = barbeiros.find(b => b.id === barbeiroId);
   const servico = SERVICOS.find(s => s.id === servicoId);
   const horarios = unidade ? gerarHorarios(unidade.horario.abertura, unidade.horario.fechamento) : [];
   const minDate = new Date().toISOString().split('T')[0];
@@ -363,15 +374,18 @@ function AgendarModal({ session, usuario, stats, onClose, onSuccess }: {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {unidade?.barbeiros.map(bid => {
-                const b = BARBEIROS.find(x => x.id === bid)!;
+                const b = barbeiros.find(x => x.id === bid);
+                if (!b) return null;
                 const stat = stats.find(s => s.barbeiroId === bid);
                 return (
                   <button key={bid} className="card card-green"
                     style={{ padding: '16px 20px', textAlign: 'left', cursor: 'pointer', width: '100%', background: 'var(--surface)', border: '1px solid var(--border)' }}
                     onClick={() => { setBarbeiroId(bid); setStep('servico'); }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                      <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--surface3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem' }}>
-                        {b.emoji}
+                      <div style={{ width: 48, height: 48, borderRadius: '50%', background: 'var(--surface3)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.4rem', overflow: 'hidden', flexShrink: 0 }}>
+                        {b.photo_url
+                          ? <img src={b.photo_url} alt={b.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          : b.emoji}
                       </div>
                       <div style={{ flex: 1 }}>
                         <p style={{ fontWeight: 700 }}>{b.nome}</p>
@@ -497,9 +511,9 @@ const SLOT_ACCENTS = [
   { color: '#ff1744', glow: 'rgba(255,23,68,0.2)', border: 'rgba(255,23,68,0.35)' },
 ];
 
-function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh }: {
+function Dashboard({ session, usuario, stats, agendamentos, barbeiros, onAgendar, onRefresh }: {
   session: Session; usuario: Usuario | null; stats: Stats[];
-  agendamentos: Agendamento[]; onAgendar: () => void; onRefresh: () => void;
+  agendamentos: Agendamento[]; barbeiros: BarbeiroDB[]; onAgendar: () => void; onRefresh: () => void;
 }) {
   const [avaliacoes, setAvaliacoes] = useState<Record<string, number>>({});
   const [savingAv, setSavingAv] = useState<string | null>(null);
@@ -528,12 +542,12 @@ function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh
   const passados = agendamentos.filter(a => a.data < hoje || a.status === 'cancelado');
   const hoje_ag = agendamentos.find(a => a.data === hoje && a.status !== 'cancelado');
 
-  const getBarbeiro = (id: string) => BARBEIROS.find(b => b.id === id);
+  const getBarbeiro = (id: string) => barbeiros.find(b => b.id === id);
   const getUnidade = (id: string) => UNIDADES.find(u => u.id === id);
 
   const statusBadge: Record<string, string> = { confirmado: 'badge-green', pendente: 'badge-yellow', cancelado: 'badge-red' };
 
-  const top3 = [...BARBEIROS].map(b => ({ ...b, stat: stats.find(s => s.barbeiroId === b.id) }))
+  const top3 = [...barbeiros].map(b => ({ ...b, stat: stats.find(s => s.barbeiroId === b.id) }))
     .sort((a, b) => (b.stat?.mediaEstrelas || 0) - (a.stat?.mediaEstrelas || 0)).slice(0, 3);
 
   return (
@@ -627,7 +641,11 @@ function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh
                 onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 32px ${acc.glow}`; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}>
                 <div style={{ position: 'absolute', top: 10, right: 10, fontFamily: 'var(--font-display)', fontSize: '1.4rem', color: acc.color, opacity: 0.25 }}>#{i + 1}</div>
-                <div style={{ width: 48, height: 48, borderRadius: '50%', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', background: `${acc.color}22`, border: `1px solid ${acc.border}` }}>{b.emoji}</div>
+                <div style={{ width: 48, height: 48, borderRadius: '50%', marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.5rem', background: `${acc.color}22`, border: `1px solid ${acc.border}`, overflow: 'hidden' }}>
+                  {b.photo_url
+                    ? <img src={b.photo_url} alt={b.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : b.emoji}
+                </div>
                 <p style={{ fontWeight: 800, fontSize: '0.88rem', marginBottom: 2 }}>{b.nome.split(' ')[0]}</p>
                 <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginBottom: 10 }}>{b.nome.split(' ').slice(1).join(' ')}</p>
                 <div style={{ display: 'flex', gap: 2, marginBottom: 3 }}>
@@ -725,8 +743,8 @@ function Dashboard({ session, usuario, stats, agendamentos, onAgendar, onRefresh
 
 // ─── Configurações ────────────────────────────────────────────────────────────
 
-function Configuracoes({ session, usuario, onUpdate, onLogout }: {
-  session: Session; usuario: Usuario | null; onUpdate: () => void; onLogout: () => void;
+function Configuracoes({ session, usuario, barbeiros, onUpdate, onLogout }: {
+  session: Session; usuario: Usuario | null; barbeiros: BarbeiroDB[]; onUpdate: () => void; onLogout: () => void;
 }) {
   const [tema, setTema] = useState<'dark' | 'light'>(usuario?.tema || 'dark');
   const [barbeiroFav, setBarbeiroFav] = useState(usuario?.barbeiro_favorito || '');
@@ -814,7 +832,7 @@ function Configuracoes({ session, usuario, onUpdate, onLogout }: {
 
       <S title="Preferências">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {[['Barbeiro favorito', barbeiroFav, setBarbeiroFav, BARBEIROS.map(b => ({ v: b.id, l: `${b.emoji} ${b.nome}` }))],
+          {[['Barbeiro favorito', barbeiroFav, setBarbeiroFav, barbeiros.map(b => ({ v: b.id, l: `${b.emoji} ${b.nome}` }))],
             ['Serviço favorito', servicoFav, setServicoFav, SERVICOS.map(s => ({ v: s.id, l: s.nome }))],
             ['Horário favorito', horarioFav, setHorarioFav, horarios.map(h => ({ v: h, l: h }))],
             ['Unidade favorita', unidadeFav, setUnidadeFav, UNIDADES.map(u => ({ v: u.id, l: u.nome }))],
@@ -856,11 +874,12 @@ function Configuracoes({ session, usuario, onUpdate, onLogout }: {
 
 // ─── Admin Panel ──────────────────────────────────────────────────────────────
 
-function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () => void }) {
+function AdminPanel({ session, barbeiros: barbeirosInit, onRefresh }: { session: Session; barbeiros: BarbeiroDB[]; onRefresh: () => void }) {
   const [usuarios, setUsuarios] = useState<(Usuario & { _messageId?: string })[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [barbeiros, setBarbeiros] = useState<BarbeiroDB[]>(barbeirosInit);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'usuarios' | 'agendamentos'>('usuarios');
+  const [activeTab, setActiveTab] = useState<'usuarios' | 'agendamentos' | 'barbeiros'>('usuarios');
   const [promoTarget, setPromoTarget] = useState<string | null>(null);
   const [novoRole, setNovoRole] = useState<UserRole>('barbeiro');
   const [novoBarbeiroId, setNovoBarbeiroId] = useState('');
@@ -869,14 +888,29 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [filtroBarbeiro, setFiltroBarbeiro] = useState('');
 
+  // Barbeiro form state
+  const [bFormOpen, setBFormOpen] = useState(false);
+  const [bEditId, setBEditId] = useState<string | null>(null);
+  const [bNome, setBNome] = useState('');
+  const [bEmoji, setBEmoji] = useState('✂️');
+  const [bEspecialidades, setBEspecialidades] = useState('');
+  const [bUnidades, setBUnidades] = useState<string[]>([]);
+  const [bFotoFile, setBFotoFile] = useState<File | null>(null);
+  const [bFotoPreview, setBFotoPreview] = useState<string | null>(null);
+  const [bSaving, setBSaving] = useState(false);
+  const [bError, setBError] = useState('');
+  const fotoInputRef = useRef<HTMLInputElement>(null);
+
   const loadAdmin = useCallback(async () => {
     setLoading(true);
-    const [uRes, aRes] = await Promise.all([
+    const [uRes, aRes, bRes] = await Promise.all([
       fetch('/api/usuarios?action=todos'),
       fetch('/api/agendamentos?action=admin'),
+      fetch('/api/barbeiros'),
     ]);
     if (uRes.ok) { const d = await uRes.json(); setUsuarios(d.usuarios || []); }
     if (aRes.ok) { const d = await aRes.json(); setAgendamentos(d.agendamentos || []); }
+    if (bRes.ok) { const d = await bRes.json(); setBarbeiros(d.barbeiros || []); }
     setLoading(false);
   }, []);
 
@@ -948,6 +982,9 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
       <div className="tab-bar" style={{ marginBottom: 20 }}>
         <button className={'tab' + (activeTab === 'usuarios' ? ' active' : '')} onClick={() => setActiveTab('usuarios')}>Usuários</button>
         <button className={'tab' + (activeTab === 'agendamentos' ? ' active' : '')} onClick={() => setActiveTab('agendamentos')}>Agendamentos</button>
+        {canDo(session.role, 'acesso_admin') && (
+          <button className={'tab' + (activeTab === 'barbeiros' ? ' active' : '')} onClick={() => setActiveTab('barbeiros')}>✂️ Barbeiros</button>
+        )}
       </div>
 
       {loading ? (
@@ -974,7 +1011,7 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
                       <span style={{ fontSize: '0.72rem', fontWeight: 700, color: ROLE_COLOR[u.role as UserRole], textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                         {ROLE_LABEL[u.role as UserRole]}
                       </span>
-                      {u.barbeiro_id && <span className="badge badge-green">✂️ {BARBEIROS.find(b => b.id === u.barbeiro_id)?.nome || u.barbeiro_id}</span>}
+                      {u.barbeiro_id && <span className="badge badge-green">✂️ {barbeiros.find(b => b.id === u.barbeiro_id)?.nome || u.barbeiro_id}</span>}
                       {u.unidade_id && <span className="badge badge-gray">📍 {UNIDADES.find(un => un.id === u.unidade_id)?.bairro || u.unidade_id}</span>}
                       <span className="badge badge-yellow">★ {u.pontos || 0}pts</span>
                     </div>
@@ -1013,7 +1050,7 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
                           <label style={{ fontSize: '0.72rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Vincular ao barbeiro</label>
                           <select className="input" value={novoBarbeiroId} onChange={e => setNovoBarbeiroId(e.target.value)}>
                             <option value="">Nenhum</option>
-                            {BARBEIROS.map(b => <option key={b.id} value={b.id}>{b.emoji} {b.nome}</option>)}
+                            {barbeiros.map(b => <option key={b.id} value={b.id}>{b.emoji} {b.nome}</option>)}
                           </select>
                         </div>
                       )}
@@ -1039,7 +1076,7 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
             );
           })}
         </div>
-      ) : (
+      ) : activeTab === 'agendamentos' ? (
         <div>
           {/* Filtros */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
@@ -1051,7 +1088,7 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
             </select>
             <select className="input" style={{ flex: 1, minWidth: 120 }} value={filtroBarbeiro} onChange={e => setFiltroBarbeiro(e.target.value)}>
               <option value="">Todos barbeiros</option>
-              {BARBEIROS.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+              {barbeiros.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
             </select>
           </div>
 
@@ -1060,7 +1097,7 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
               <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-faint)' }}>Nenhum agendamento encontrado</div>
             )}
             {agsFiltrados.map(a => {
-              const b = BARBEIROS.find(x => x.id === a.barbeiro_id);
+              const b = barbeiros.find(x => x.id === a.barbeiro_id);
               const u = UNIDADES.find(x => x.id === a.unidade_id);
               const cliente = usuarios.find(x => x.id === a.usuario_id);
               return (
@@ -1097,7 +1134,263 @@ function AdminPanel({ session, onRefresh }: { session: Session; onRefresh: () =>
             })}
           </div>
         </div>
-      )}
+      ) : activeTab === 'barbeiros' ? (
+        <div>
+          {/* Header + botão novo */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)', letterSpacing: '0.14em', textTransform: 'uppercase' }}>
+              {barbeiros.length} barbeiro{barbeiros.length !== 1 ? 's' : ''} cadastrado{barbeiros.length !== 1 ? 's' : ''}
+            </p>
+            <button className="btn btn-green" style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+              onClick={() => {
+                setBEditId(null); setBNome(''); setBEmoji('✂️'); setBEspecialidades('');
+                setBUnidades([]); setBFotoFile(null); setBFotoPreview(null); setBError('');
+                setBFormOpen(true);
+              }}>
+              + Novo barbeiro
+            </button>
+          </div>
+
+          {/* Formulário criar/editar */}
+          {bFormOpen && (
+            <div className="card anim-in" style={{ padding: '20px 18px', marginBottom: 16, border: '1px solid var(--green)', background: 'rgba(0,200,83,0.04)' }}>
+              <p style={{ fontFamily: 'var(--font-display)', fontSize: '1.2rem', marginBottom: 16 }}>
+                {bEditId ? 'EDITAR BARBEIRO' : 'NOVO BARBEIRO'}
+              </p>
+
+              {/* Foto de perfil */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+                <div
+                  onClick={() => fotoInputRef.current?.click()}
+                  style={{
+                    width: 72, height: 72, borderRadius: '50%', background: 'var(--surface3)',
+                    border: '2px dashed var(--border)', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', cursor: 'pointer', overflow: 'hidden',
+                    flexShrink: 0, transition: 'border-color 0.2s',
+                  }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--green)'}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.borderColor = 'var(--border)'}
+                >
+                  {bFotoPreview
+                    ? <img src={bFotoPreview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    : <span style={{ fontSize: '1.8rem' }}>{bEmoji || '📷'}</span>}
+                </div>
+                <div>
+                  <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.78rem', marginBottom: 4 }}
+                    onClick={() => fotoInputRef.current?.click()}>
+                    {bFotoPreview ? '🔄 Trocar foto' : '📷 Adicionar foto'}
+                  </button>
+                  {bFotoPreview && (
+                    <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.78rem', marginLeft: 6, color: 'var(--red)' }}
+                      onClick={() => { setBFotoFile(null); setBFotoPreview(null); }}>
+                      ✕ Remover
+                    </button>
+                  )}
+                  <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginTop: 4 }}>
+                    JPG, PNG ou WEBP · máx 8MB<br />
+                    A URL é renovada automaticamente a cada acesso
+                  </p>
+                </div>
+                <input
+                  ref={fotoInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  style={{ display: 'none' }}
+                  onChange={e => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setBFotoFile(file);
+                    const reader = new FileReader();
+                    reader.onload = ev => setBFotoPreview(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  }}
+                />
+              </div>
+
+              {/* Campos */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Nome *</label>
+                    <input className="input" placeholder="Ex: João Silva" value={bNome} onChange={e => setBNome(e.target.value)} style={{ width: '100%' }} />
+                  </div>
+                  <div style={{ width: 80 }}>
+                    <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>Emoji</label>
+                    <input className="input" placeholder="✂️" value={bEmoji} onChange={e => setBEmoji(e.target.value)} style={{ width: '100%', textAlign: 'center', fontSize: '1.2rem' }} />
+                  </div>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 4 }}>
+                    Especialidades <span style={{ color: 'var(--text-faint)', fontWeight: 400 }}>(separadas por vírgula)</span>
+                  </label>
+                  <input className="input" placeholder="Degradê, Barba, Pézinho" value={bEspecialidades} onChange={e => setBEspecialidades(e.target.value)} style={{ width: '100%' }} />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.7rem', color: 'var(--text-faint)', display: 'block', marginBottom: 6 }}>Unidades</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {UNIDADES.map(u => (
+                      <button key={u.id}
+                        className={'btn' + (bUnidades.includes(u.id) ? ' btn-green' : ' btn-ghost')}
+                        style={{ padding: '5px 12px', fontSize: '0.75rem' }}
+                        onClick={() => setBUnidades(prev =>
+                          prev.includes(u.id) ? prev.filter(x => x !== u.id) : [...prev, u.id]
+                        )}>
+                        {u.bairro}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {bError && <p style={{ color: 'var(--red)', fontSize: '0.78rem' }}>{bError}</p>}
+
+                <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+                  <button className="btn btn-ghost" style={{ flex: 1 }} onClick={() => { setBFormOpen(false); setBEditId(null); }}>
+                    Cancelar
+                  </button>
+                  <button className="btn btn-green" style={{ flex: 2 }} disabled={bSaving}
+                    onClick={async () => {
+                      if (!bNome.trim()) { setBError('Nome é obrigatório'); return; }
+                      setBSaving(true); setBError('');
+                      try {
+                        let barbeiroId = bEditId;
+
+                        if (bEditId) {
+                          // Editar existente
+                          await fetch('/api/barbeiros', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              action: 'editar',
+                              barbeiro_id: bEditId,
+                              nome: bNome,
+                              emoji: bEmoji,
+                              especialidades: bEspecialidades.split(',').map(s => s.trim()).filter(Boolean),
+                              unidades: bUnidades,
+                            }),
+                          });
+                        } else {
+                          // Criar novo
+                          const res = await fetch('/api/barbeiros', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              action: 'criar',
+                              nome: bNome,
+                              emoji: bEmoji,
+                              especialidades: bEspecialidades.split(',').map(s => s.trim()).filter(Boolean),
+                              unidades: bUnidades,
+                            }),
+                          });
+                          const d = await res.json();
+                          barbeiroId = d.barbeiro?.id;
+                        }
+
+                        // Upload de foto (se selecionada)
+                        if (bFotoFile && barbeiroId) {
+                          const fd = new FormData();
+                          fd.append('barbeiro_id', barbeiroId);
+                          fd.append('foto', bFotoFile);
+                          await fetch('/api/barbeiros', { method: 'POST', body: fd });
+                        }
+
+                        await loadAdmin();
+                        onRefresh();
+                        setBFormOpen(false); setBEditId(null);
+                      } catch (e: any) {
+                        setBError(e.message || 'Erro ao salvar');
+                      } finally {
+                        setBSaving(false);
+                      }
+                    }}>
+                    {bSaving ? <span className="spinner" /> : bEditId ? 'Salvar alterações' : 'Criar barbeiro'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Lista de barbeiros */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {barbeiros.length === 0 && !bFormOpen && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-faint)' }}>
+                <p style={{ fontSize: '2rem', marginBottom: 8 }}>✂️</p>
+                <p style={{ fontSize: '0.9rem' }}>Nenhum barbeiro cadastrado ainda</p>
+                <p style={{ fontSize: '0.75rem', marginTop: 4 }}>Clique em "Novo barbeiro" para começar</p>
+              </div>
+            )}
+            {barbeiros.map(b => (
+              <div key={b.id} className="card" style={{ padding: '14px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                  {/* Avatar */}
+                  <div style={{
+                    width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
+                    background: 'var(--surface3)', display: 'flex', alignItems: 'center',
+                    justifyContent: 'center', fontSize: '1.4rem', overflow: 'hidden',
+                    border: '1px solid var(--border)',
+                  }}>
+                    {b.photo_url
+                      ? <img src={b.photo_url} alt={b.nome} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : b.emoji}
+                  </div>
+
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3, flexWrap: 'wrap' }}>
+                      <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>{b.nome}</p>
+                      <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{b.id}</span>
+                    </div>
+                    {b.especialidades.length > 0 && (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 4 }}>
+                        {b.especialidades.map(e => <span key={e} className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{e}</span>)}
+                      </div>
+                    )}
+                    {b.unidades.length > 0 && (
+                      <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)' }}>
+                        📍 {b.unidades.map(uid => UNIDADES.find(u => u.id === uid)?.bairro || uid).join(' · ')}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Ações */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flexShrink: 0 }}>
+                    <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.75rem' }}
+                      onClick={() => {
+                        setBEditId(b.id);
+                        setBNome(b.nome);
+                        setBEmoji(b.emoji);
+                        setBEspecialidades(b.especialidades.join(', '));
+                        setBUnidades(b.unidades);
+                        setBFotoFile(null);
+                        setBFotoPreview(b.photo_url || null);
+                        setBError('');
+                        setBFormOpen(true);
+                        // Scroll up
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }}>
+                      ✏️ Editar
+                    </button>
+                    <button className="btn btn-ghost" style={{ padding: '5px 12px', fontSize: '0.75rem', color: 'var(--red)' }}
+                      onClick={async () => {
+                        if (!confirm(`Desativar ${b.nome}? Histórico de agendamentos é preservado.`)) return;
+                        await fetch('/api/barbeiros', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ action: 'deletar', barbeiro_id: b.id }),
+                        });
+                        await loadAdmin();
+                        onRefresh();
+                      }}>
+                      🗑 Desativar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -1110,6 +1403,7 @@ export default function App() {
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [stats, setStats] = useState<Stats[]>([]);
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
+  const [barbeiros, setBarbeiros] = useState<BarbeiroDB[]>([]);
   const [loading, setLoading] = useState(true);
   const [agendarOpen, setAgendarOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
@@ -1117,11 +1411,12 @@ export default function App() {
   useEffect(() => { loadAll(); }, []);
 
   async function loadAll() {
-    const [sessRes, userRes, agRes, statsRes] = await Promise.all([
+    const [sessRes, userRes, agRes, statsRes, barbRes] = await Promise.all([
       fetch('/api/auth'),
       fetch('/api/usuarios'),
       fetch('/api/agendamentos?action=meus'),
       fetch('/api/agendamentos?action=stats'),
+      fetch('/api/barbeiros'),
     ]);
 
     const sessData = await sessRes.json();
@@ -1129,6 +1424,7 @@ export default function App() {
     if (userRes.ok) { const d = await userRes.json(); setUsuario(d.usuario || null); }
     if (agRes.ok) { const d = await agRes.json(); setAgendamentos(d.agendamentos || []); }
     if (statsRes.ok) { const d = await statsRes.json(); setStats(d.stats || []); }
+    if (barbRes.ok) { const d = await barbRes.json(); setBarbeiros(d.barbeiros || []); }
     setLoading(false);
   }
 
@@ -1157,13 +1453,13 @@ export default function App() {
 
       <div style={{ maxWidth: 680, margin: '0 auto', padding: '40px 16px 120px', position: 'relative', zIndex: 1 }}>
         {tab === 'dashboard' && (
-          <Dashboard session={session} usuario={usuario} stats={stats} agendamentos={agendamentos} onAgendar={() => setAgendarOpen(true)} onRefresh={loadAll} />
+          <Dashboard session={session} usuario={usuario} stats={stats} agendamentos={agendamentos} barbeiros={barbeiros} onAgendar={() => setAgendarOpen(true)} onRefresh={loadAll} />
         )}
         {tab === 'configuracoes' && (
-          <Configuracoes session={session} usuario={usuario} onUpdate={loadAll} onLogout={logout} />
+          <Configuracoes session={session} usuario={usuario} barbeiros={barbeiros} onUpdate={loadAll} onLogout={logout} />
         )}
         {tab === 'admin' && temAdmin && (
-          <AdminPanel session={session} onRefresh={loadAll} />
+          <AdminPanel session={session} barbeiros={barbeiros} onRefresh={loadAll} />
         )}
       </div>
 
@@ -1186,7 +1482,7 @@ export default function App() {
       </div>
 
       {agendarOpen && (
-        <AgendarModal session={session} usuario={usuario} stats={stats} onClose={() => setAgendarOpen(false)} onSuccess={loadAll} />
+        <AgendarModal session={session} usuario={usuario} stats={stats} barbeiros={barbeiros} onClose={() => setAgendarOpen(false)} onSuccess={loadAll} />
       )}
     </div>
   );
