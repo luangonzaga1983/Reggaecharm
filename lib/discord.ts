@@ -266,6 +266,10 @@ export async function getAgendamentosByBarbeiro(id: string) {
   return (await getAllAgendamentos()).filter(a => a.barbeiro_id === id);
 }
 
+export async function getAgendamentosByUnidade(id: string) {
+  return (await getAllAgendamentos()).filter(a => a.unidade_id === id);
+}
+
 export async function getAgendamentosByData(barbeiroId: string, data: string) {
   return (await getAllAgendamentos()).filter(
     a => a.barbeiro_id === barbeiroId && a.data === data && a.status !== 'cancelado'
