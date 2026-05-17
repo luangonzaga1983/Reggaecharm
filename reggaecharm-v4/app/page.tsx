@@ -954,13 +954,7 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
   const [agendamentos, setAgendamentos] = useState<Agendamento[]>([]);
   const [barbeiros, setBarbeiros] = useState<BarbeiroDB[]>(barbeirosInit);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'usuarios' | 'agendamentos' | 'barbeiros' | 'loja' | 'manutencao'>('usuarios');
-  const [banTarget, setBanTarget] = useState<string | null>(null);
-  const [banMotivo, setBanMotivo] = useState('');
-  const [maintenance, setMaintenance] = useState<{ ativo: boolean; mensagem: string; _messageId?: string } | null>(null);
-  const [maintSaving, setMaintSaving] = useState(false);
-  const [maintSaved, setMaintSaved] = useState(false);
-  const [userSearch, setUserSearch] = useState('');
+  const [activeTab, setActiveTab] = useState<'usuarios' | 'agendamentos' | 'barbeiros' | 'loja'>('usuarios');
   const [promoTarget, setPromoTarget] = useState<string | null>(null);
   const [novoRole, setNovoRole] = useState<UserRole>('barbeiro');
   const [novoBarbeiroId, setNovoBarbeiroId] = useState('');
@@ -989,16 +983,14 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
 
   const loadAdmin = useCallback(async () => {
     setLoading(true);
-    const [uRes, aRes, bRes, mRes] = await Promise.all([
+    const [uRes, aRes, bRes] = await Promise.all([
       fetch('/api/usuarios?action=todos'),
       fetch('/api/agendamentos?action=admin'),
-      fetch('/api/barbeiros?todos=1'),
-      fetch('/api/manutencao'),
+      fetch('/api/barbeiros'),
     ]);
     if (uRes.ok) { const d = await uRes.json(); setUsuarios(d.usuarios || []); }
     if (aRes.ok) { const d = await aRes.json(); setAgendamentos(d.agendamentos || []); }
     if (bRes.ok) { const d = await bRes.json(); setBarbeiros(d.barbeiros || []); }
-    if (mRes.ok) { const d = await mRes.json(); setMaintenance(d.maintenance || null); }
     setLoading(false);
   }, []);
 
@@ -1009,27 +1001,6 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
     await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'promover', usuario_id: uid, novo_role: novoRole, barbeiro_id: novoBarbeiroId || null, unidade_id: novaUnidadeId || null }) });
     setSaving(false); setPromoTarget(null); setNovoRole('barbeiro'); setNovoBarbeiroId(''); setNovaUnidadeId('');
     loadAdmin();
-  }
-
-  async function banir(uid: string) {
-    if (!banMotivo.trim()) { alert('Informe o motivo do banimento'); return; }
-    setSaving(true);
-    await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'banir', usuario_id: uid, motivo: banMotivo }) });
-    setSaving(false); setBanTarget(null); setBanMotivo(''); loadAdmin();
-  }
-
-  async function desbanir(uid: string) {
-    if (!confirm('Desbanir este usuário?')) return;
-    await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'desbanir', usuario_id: uid }) });
-    loadAdmin();
-  }
-
-  async function salvarManutencao(ativo: boolean, mensagem: string) {
-    setMaintSaving(true);
-    const res = await fetch('/api/manutencao', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ativo, mensagem }) });
-    const d = await res.json();
-    setMaintSaving(false);
-    if (res.ok) { setMaintenance(d.maintenance); setMaintSaved(true); setTimeout(() => setMaintSaved(false), 2500); }
   }
 
   async function cancelarAg(id: string) {
@@ -1156,20 +1127,13 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
         <button className={'tab' + (activeTab === 'agendamentos' ? ' active' : '')} onClick={() => setActiveTab('agendamentos')}>Agendamentos</button>
         <button className={'tab' + (activeTab === 'barbeiros' ? ' active' : '')} onClick={() => setActiveTab('barbeiros')}>Barbeiros</button>
         {isDono && <button className={'tab' + (activeTab === 'loja' ? ' active' : '')} onClick={() => setActiveTab('loja')}>Loja</button>}
-        {isDono && <button className={'tab' + (activeTab === 'manutencao' ? ' active' : '')} onClick={() => setActiveTab('manutencao')} style={{ color: maintenance?.ativo ? 'var(--red)' : undefined }}>Manutencao</button>}
       </div>
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 40 }}><span className="spinner spinner-lg" /></div>
       ) : activeTab === 'usuarios' ? (
-        <div>
-          <input className="input" placeholder="Buscar por nome, @ ou e-mail..." value={userSearch} onChange={e => setUserSearch(e.target.value)} style={{ marginBottom: 12 }} />
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {usuarios.filter(u => {
-            if (!userSearch) return true;
-            const q = userSearch.toLowerCase();
-            return u.nome.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (u.username || '').toLowerCase().includes(q);
-          }).map(u => {
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {usuarios.map(u => {
             const isMe = u.id === session.id;
             const podeMexer = canDo(session.role, 'promover') && !isMe;
             const lvlAlvo = { cliente: 0, barbeiro: 1, gerente: 2, dono: 3 }[u.role as UserRole] ?? 0;
@@ -1187,39 +1151,17 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
                         {u.username && <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--green)' }}>@{u.username}</span>}
                         <span className="badge" style={{ color: ROLE_COLOR[u.role as UserRole], borderColor: ROLE_COLOR[u.role as UserRole] + '44', background: ROLE_COLOR[u.role as UserRole] + '11' }}>{ROLE_LABEL[u.role as UserRole]}</span>
                         {isMe && <span className="badge badge-gray">Você</span>}
-                        {(u as any).banido && <span className="badge badge-red">Banido</span>}
                         {u.barbeiro_id && <span className="badge badge-green">{barbeiros.find(b => b.id === u.barbeiro_id)?.nome || u.barbeiro_id}</span>}
                       </div>
                       <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: 'var(--text-faint)' }}>{u.email}</p>
                     </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    {podeMexer && !bloqueado && (
-                      <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => { setPromoTarget(u.id === promoTarget ? null : u.id); setBanTarget(null); }}>
-                        {promoTarget === u.id ? 'Cancelar' : 'Cargo'}
-                      </button>
-                    )}
-                    {!isMe && u.role !== 'dono' && canDo(session.role, 'promover') && (
-                      (u as any).banido
-                        ? <button className="btn btn-green" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => desbanir(u.id)}>Desbanir</button>
-                        : <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => { setBanTarget(u.id === banTarget ? null : u.id); setPromoTarget(null); setBanMotivo(''); }}>Banir</button>
-                    )}
-                  </div>
+                  {podeMexer && !bloqueado && (
+                    <button className="btn btn-ghost" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={() => setPromoTarget(u.id === promoTarget ? null : u.id)}>
+                      {promoTarget === u.id ? 'Cancelar' : 'Alterar'}
+                    </button>
+                  )}
                 </div>
-
-                {banTarget === u.id && (
-                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Banir usuario</p>
-                    <input className="input" placeholder="Motivo do banimento..." value={banMotivo} onChange={e => setBanMotivo(e.target.value)} />
-                    <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)' }}>O usuario sera impedido de acessar o sistema. Cookies e IP serao registrados.</p>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-danger" style={{ flex: 1 }} onClick={() => banir(u.id)} disabled={saving}>
-                        {saving ? <><span className="spinner" />Banindo...</> : 'Confirmar banimento'}
-                      </button>
-                      <button className="btn btn-outline" onClick={() => { setBanTarget(null); setBanMotivo(''); }}>Cancelar</button>
-                    </div>
-                  </div>
-                )}
 
                 {promoTarget === u.id && (
                   <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1255,7 +1197,6 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
               </div>
             );
           })}
-          </div>
         </div>
 
       ) : activeTab === 'agendamentos' ? (
@@ -1399,60 +1340,6 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
           </div>
         </div>
 
-      ) : activeTab === 'manutencao' && isDono ? (
-        <div>
-          <div className="card" style={{ padding: 20, marginBottom: 16, border: maintenance?.ativo ? '1px solid rgba(255,23,68,0.4)' : '1px solid var(--border)' }}>
-            <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-faint)', marginBottom: 16 }}>Modo Manutencao</p>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-              <div>
-                <p style={{ fontWeight: 700, fontSize: '0.95rem' }}>{maintenance?.ativo ? 'Ativo — Site bloqueado para usuarios' : 'Desativado — Site operando normalmente'}</p>
-                <p style={{ fontSize: '0.78rem', color: 'var(--text-faint)', marginTop: 3 }}>Apenas o dono acessa o sistema durante manutencao</p>
-              </div>
-              <button
-                onClick={() => salvarManutencao(!maintenance?.ativo, maintenance?.mensagem || 'Site em manutencao. Voltamos em breve.')}
-                disabled={maintSaving}
-                style={{ padding: '10px 20px', borderRadius: 10, fontWeight: 700, fontSize: '0.82rem', cursor: 'pointer', border: 'none', background: maintenance?.ativo ? 'var(--green)' : 'var(--red)', color: '#fff', minWidth: 100 }}>
-                {maintSaving ? '...' : maintenance?.ativo ? 'Desativar' : 'Ativar'}
-              </button>
-            </div>
-            <div>
-              <label style={{ fontSize: '0.78rem', color: 'var(--text-faint)', display: 'block', marginBottom: 6 }}>Mensagem exibida para os usuarios</label>
-              <textarea
-                className="input"
-                rows={3}
-                value={maintenance?.mensagem || ''}
-                onChange={e => setMaintenance(prev => prev ? { ...prev, mensagem: e.target.value } : { ativo: false, mensagem: e.target.value })}
-                style={{ resize: 'vertical', fontFamily: 'var(--font-ui)' }}
-              />
-            </div>
-            {maintSaved && <p style={{ color: 'var(--green)', fontSize: '0.8rem', marginTop: 10 }}>Salvo com sucesso</p>}
-            <button className="btn btn-outline" style={{ width: '100%', marginTop: 12 }}
-              onClick={() => salvarManutencao(maintenance?.ativo ?? false, maintenance?.mensagem || '')}>
-              {maintSaving ? <><span className="spinner" />Salvando...</> : 'Salvar mensagem'}
-            </button>
-          </div>
-
-          <div className="card" style={{ padding: 20, marginBottom: 16 }}>
-            <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-faint)', marginBottom: 16 }}>Acoes de sistema</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
-                <div>
-                  <p style={{ fontWeight: 600, fontSize: '0.88rem' }}>Usuarios banidos</p>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-faint)' }}>{usuarios.filter(u => (u as any).banido).length} usuario(s) banido(s)</p>
-                </div>
-                <button className="btn btn-outline" style={{ fontSize: '0.78rem' }} onClick={() => setActiveTab('usuarios')}>Ver lista</button>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0' }}>
-                <div>
-                  <p style={{ fontWeight: 600, fontSize: '0.88rem' }}>Total de agendamentos</p>
-                  <p style={{ fontSize: '0.75rem', color: 'var(--text-faint)' }}>{agendamentos.length} registros no sistema</p>
-                </div>
-                <button className="btn btn-outline" style={{ fontSize: '0.78rem' }} onClick={() => setActiveTab('agendamentos')}>Ver todos</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
       ) : activeTab === 'loja' && isDono ? (
         <div>
           <div className="card" style={{ padding: 20, marginBottom: 16 }}>
@@ -1575,7 +1462,6 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [agendarOpen, setAgendarOpen] = useState(false);
   const [authed, setAuthed] = useState(false);
-  const [maintenanceMsg, setMaintenanceMsg] = useState<string | null>(null);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -1590,16 +1476,6 @@ export default function App() {
     ]);
 
     const sessData = await sessRes.json();
-    if (sessData.banned) {
-      alert('Sua conta foi banida. Motivo: ' + (sessData.motivo || 'Violacao dos termos de uso'));
-      setLoading(false);
-      return;
-    }
-    if (sessData.maintenance) {
-      setMaintenanceMsg(sessData.mensagem || 'Site em manutencao. Voltamos em breve.');
-      setLoading(false);
-      return;
-    }
     if (sessData.session) { setSession(sessData.session); setAuthed(true); }
     if (userRes.ok) { const d = await userRes.json(); setUsuario(d.usuario || null); }
     if (agRes.ok) { const d = await agRes.json(); setAgendamentos(d.agendamentos || []); }
@@ -1623,14 +1499,6 @@ export default function App() {
     );
   }
 
-  if (maintenanceMsg) return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 20px', textAlign: 'center' }}>
-      <div className="rasta-bar" style={{ width: 64, borderRadius: 2, marginBottom: 32 }} />
-      <p style={{ fontFamily: 'var(--font-display)', fontSize: 'clamp(2rem, 8vw, 4rem)', color: 'var(--yellow)', marginBottom: 12 }}>MANUTENCAO</p>
-      <p style={{ color: 'var(--text-dim)', fontSize: '0.95rem', maxWidth: 360, lineHeight: 1.7 }}>{maintenanceMsg}</p>
-      <button className="btn btn-outline" style={{ marginTop: 28 }} onClick={loadAll}>Tentar novamente</button>
-    </div>
-  );
   if (!authed || !session) return <Auth onSuccess={loadAll} />;
   if (!storeConfig) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span className="spinner spinner-lg" /></div>;
 

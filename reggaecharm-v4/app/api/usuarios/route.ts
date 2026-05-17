@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getUsuarioById, updateUsuario, deleteUsuario, getAllUsuarios, getUsuarioByUsername, uploadUserPhoto, banirUsuario, desbanirUsuario } from '@/lib/discord';
+import { getUsuarioById, updateUsuario, deleteUsuario, getAllUsuarios, getUsuarioByUsername, uploadUserPhoto } from '@/lib/discord';
 import { getSession, canDo, ROLE_LEVEL } from '@/lib/auth';
 import type { UserRole } from '@/lib/discord';
 import bcrypt from 'bcryptjs';
@@ -126,28 +126,6 @@ export async function POST(req: NextRequest) {
       if (barbeiro_id !== undefined) alvo.barbeiro_id = barbeiro_id || null;
       if (unidade_id !== undefined) alvo.unidade_id = unidade_id || null;
       await updateUsuario(alvo);
-      return NextResponse.json({ ok: true });
-    }
-
-    if (action === 'banir') {
-      if (session.role !== 'dono' && session.role !== 'gerente') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
-      const { usuario_id, motivo, ban_ip } = body;
-      const alvo = await getUsuarioById(usuario_id);
-      if (!alvo) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
-      if (alvo.role === 'dono') return NextResponse.json({ error: 'Não é possível banir o dono' }, { status: 403 });
-      if (session.role === 'gerente' && (alvo.role === 'gerente' || alvo.role === 'dono')) {
-        return NextResponse.json({ error: 'Gerentes só podem banir clientes e barbeiros' }, { status: 403 });
-      }
-      await banirUsuario(alvo, motivo || 'Sem motivo informado', ban_ip);
-      return NextResponse.json({ ok: true });
-    }
-
-    if (action === 'desbanir') {
-      if (session.role !== 'dono' && session.role !== 'gerente') return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
-      const { usuario_id } = body;
-      const alvo = await getUsuarioById(usuario_id);
-      if (!alvo) return NextResponse.json({ error: 'Usuário não encontrado' }, { status: 404 });
-      await desbanirUsuario(alvo);
       return NextResponse.json({ ok: true });
     }
 

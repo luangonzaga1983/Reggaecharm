@@ -58,7 +58,6 @@ export async function POST(req: NextRequest) {
       if (!usuario) return NextResponse.json({ error: 'E-mail ou senha inválidos' }, { status: 401 });
       const ok = await bcrypt.compare(senha, usuario.senha);
       if (!ok) return NextResponse.json({ error: 'E-mail ou senha inválidos' }, { status: 401 });
-      if (usuario.banido) return NextResponse.json({ error: 'Conta banida. Motivo: ' + (usuario.ban_motivo || 'Violação dos termos de uso') }, { status: 403 });
 
       const token = await signToken({ id: usuario.id, email: usuario.email, nome: usuario.nome, role: usuario.role || 'cliente' });
       const res = NextResponse.json({ ok: true });
@@ -81,20 +80,7 @@ export async function POST(req: NextRequest) {
 
 export async function GET() {
   const { getSession } = await import('@/lib/auth');
-  const { getUsuarioById, getMaintenanceConfig } = await import('@/lib/discord');
   const session = await getSession();
   if (!session) return NextResponse.json({ session: null });
-  // Check if user got banned since last login
-  const usuario = await getUsuarioById(session.id);
-  if (usuario?.banido) {
-    const res = NextResponse.json({ session: null, banned: true, motivo: usuario.ban_motivo });
-    res.cookies.set('reggae_token', '', { maxAge: 0, path: '/' });
-    return res;
-  }
-  // Check maintenance mode
-  const maint = await getMaintenanceConfig();
-  if (maint.ativo && session.role !== 'dono') {
-    return NextResponse.json({ session: null, maintenance: true, mensagem: maint.mensagem });
-  }
   return NextResponse.json({ session });
 }

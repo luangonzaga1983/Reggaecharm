@@ -70,9 +70,6 @@ export interface Usuario {
   role: UserRole;
   barbeiro_id?: string | null;
   unidade_id?: string | null;
-  banido?: boolean | null;
-  ban_motivo?: string | null;
-  ban_ip?: string | null;
   _messageId?: string;
 }
 
@@ -131,30 +128,14 @@ const DEFAULT_CONFIG: Omit<StoreConfig, '_messageId'> = {
     { id: 'u4', nome: 'Reggae Charm Sul', endereco: 'Av. Miguel Yunes, 500', bairro: 'Rudge Ramos', cidade: 'São Bernardo do Campo', horario: { abertura: 9, fechamento: 20 }, dias_semana: [1,2,3,4,5,6], barbeiros: ['b2','b4'], ativo: true },
   ],
   servicos: [
-    { id: 's01', nome: 'Corte Degradê',              valor: 35,  duracao: 60,  descricao: 'Cabelo',    ativo: true },
-    { id: 's02', nome: 'Só Raspar',                  valor: 15,  duracao: 20,  descricao: 'Cabelo',    ativo: true },
-    { id: 's03', nome: 'Pézinho',                    valor: 10,  duracao: 10,  descricao: 'Cabelo',    ativo: true },
-    { id: 's04', nome: 'Corte na Tesoura',           valor: 30,  duracao: 30,  descricao: 'Cabelo',    ativo: true },
-    { id: 's05', nome: 'Corte Social',               valor: 25,  duracao: 30,  descricao: 'Cabelo',    ativo: true },
-    { id: 's06', nome: 'Bigode e Cavanhaque',        valor: 15,  duracao: 10,  descricao: 'Barba',     ativo: true },
-    { id: 's07', nome: 'Barboterapia',               valor: 25,  duracao: 30,  descricao: 'Barba',     ativo: true },
-    { id: 's08', nome: 'Corte e Barboterapia',       valor: 60,  duracao: 90,  descricao: 'Combo',     ativo: true },
-    { id: 's09', nome: 'Corte, Bigode e Cavanhaque', valor: 50,  duracao: 60,  descricao: 'Combo',     ativo: true },
-    { id: 's10', nome: 'Corte e Sobrancelha',        valor: 40,  duracao: 60,  descricao: 'Combo',     ativo: true },
-    { id: 's11', nome: 'Corte e Progressiva',        valor: 90,  duracao: 90,  descricao: 'Combo',     ativo: true },
-    { id: 's12', nome: 'Corte e Platinado',          valor: 130, duracao: 90,  descricao: 'Combo',     ativo: true },
-    { id: 's13', nome: 'Corte e Pigmentacao',        valor: 60,  duracao: 90,  descricao: 'Combo',     ativo: true },
-    { id: 's14', nome: 'Corte e Luzes',              valor: 90,  duracao: 90,  descricao: 'Combo',     ativo: true },
-    { id: 's15', nome: 'Corte e Limpeza de Pele',    valor: 65,  duracao: 90,  descricao: 'Combo',     ativo: true },
-    { id: 's16', nome: 'Corte e Alisamento',         valor: 55,  duracao: 60,  descricao: 'Combo',     ativo: true },
-    { id: 's17', nome: 'Corte e Botox',              valor: 90,  duracao: 90,  descricao: 'Combo',     ativo: true },
-    { id: 's18', nome: 'Sobrancelha',                valor: 10,  duracao: 10,  descricao: 'Adicional', ativo: true },
-    { id: 's19', nome: 'Limpeza de Pele',            valor: 30,  duracao: 30,  descricao: 'Adicional', ativo: true },
-    { id: 's20', nome: 'Botox / Progressiva',        valor: 70,  duracao: 30,  descricao: 'Quimica',   ativo: true },
-    { id: 's21', nome: 'Alisamento',                 valor: 20,  duracao: 20,  descricao: 'Quimica',   ativo: true },
-    { id: 's22', nome: 'Pigmentacao',                valor: 25,  duracao: 30,  descricao: 'Quimica',   ativo: true },
-    { id: 's23', nome: 'Platinado',                  valor: 100, duracao: 30,  descricao: 'Quimica',   ativo: true },
-    { id: 's24', nome: 'Luzes',                      valor: 70,  duracao: 30,  descricao: 'Quimica',   ativo: true },
+    { id: 's1', nome: 'Corte Clássico', valor: 35, duracao: 30, descricao: 'Tesoura ou máquina, acabamento perfeito', ativo: true },
+    { id: 's2', nome: 'Degradê', valor: 40, duracao: 40, descricao: 'Degradê suave ou pesado do jeito que você quiser', ativo: true },
+    { id: 's3', nome: 'Barba', valor: 25, duracao: 30, descricao: 'Navalha, modelagem e hidratação profunda', ativo: true },
+    { id: 's4', nome: 'Corte + Barba', valor: 55, duracao: 60, descricao: 'O combo completo — sai outro', ativo: true },
+    { id: 's5', nome: 'Black Power', valor: 45, duracao: 50, descricao: 'Definição e modelagem dos cachos naturais', ativo: true },
+    { id: 's6', nome: 'Navalhado', valor: 50, duracao: 45, descricao: 'Precisão total com navalha artesanal', ativo: true },
+    { id: 's7', nome: 'Progressiva de Barba', valor: 60, duracao: 60, descricao: 'Alisar e modelar com tratamento', ativo: true },
+    { id: 's8', nome: 'Pézinho', valor: 20, duracao: 20, descricao: 'Acabamento no pescoço e contorno', ativo: true },
   ],
 };
 
@@ -388,54 +369,4 @@ export async function deleteBarbeiro(messageId: string): Promise<void> {
   await fetch(`${BASE_URL}/channels/${CHANNEL_BARBEIROS}/messages/${messageId}`, {
     method: 'DELETE', headers: discordHeaders,
   });
-}
-
-// ─── Manutenção ────────────────────────────────────────────────────────────────
-
-export interface MaintenanceConfig {
-  ativo: boolean;
-  mensagem: string;
-  _messageId?: string;
-}
-
-export async function getMaintenanceConfig(): Promise<MaintenanceConfig> {
-  try {
-    const messages = await fetchAllMessages(CHANNEL_CONFIG);
-    for (const msg of messages) {
-      try {
-        const data = JSON.parse(msg.content);
-        if (data.__type === 'maintenance_config') {
-          return { ...data, _messageId: msg.id };
-        }
-      } catch { /* skip */ }
-    }
-  } catch { /* fallback */ }
-  return { ativo: false, mensagem: 'Site em manutenção. Voltamos em breve.' };
-}
-
-export async function saveMaintenanceConfig(config: MaintenanceConfig): Promise<MaintenanceConfig> {
-  const { _messageId, ...data } = config;
-  const content = JSON.stringify({ ...data, __type: 'maintenance_config' });
-  if (_messageId) {
-    await editMessage(CHANNEL_CONFIG, _messageId, content);
-    return config;
-  } else {
-    const msg = await postMessage(CHANNEL_CONFIG, content);
-    return { ...config, _messageId: msg.id };
-  }
-}
-
-export async function banirUsuario(usuario: Usuario, motivo: string, ip?: string): Promise<void> {
-  usuario.banido = true;
-  usuario.ban_motivo = motivo;
-  if (ip) usuario.ban_ip = ip;
-  usuario.role = 'cliente';
-  await updateUsuario(usuario);
-}
-
-export async function desbanirUsuario(usuario: Usuario): Promise<void> {
-  usuario.banido = false;
-  usuario.ban_motivo = null;
-  usuario.ban_ip = null;
-  await updateUsuario(usuario);
 }
