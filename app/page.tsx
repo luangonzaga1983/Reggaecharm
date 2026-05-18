@@ -274,6 +274,188 @@ function Auth({ onSuccess }: { onSuccess: () => void }) {
 
 // ─── Modal Agendamento ────────────────────────────────────────────────────────
 
+// ─── Perfil do Barbeiro (estilo galeria) ──────────────────────────────────────
+
+interface PostFoto {
+  id: string;
+  barbeiro_id: string;
+  foto_url: string;
+  descricao: string;
+  data: string;
+}
+
+function PerfilBarbeiro({ barbeiro, agendamentos, onClose, isProprietario }: {
+  barbeiro: BarbeiroDB;
+  agendamentos: Agendamento[];
+  onClose: () => void;
+  isProprietario?: boolean;
+}) {
+  const [fotos, setFotos] = useState<PostFoto[]>([]);
+  const [fotoAberta, setFotoAberta] = useState<PostFoto | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [descricao, setDescricao] = useState('');
+  const [fotoFile, setFotoFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [showUpload, setShowUpload] = useState(false);
+  const [abaAtiva, setAbaAtiva] = useState<'fotos' | 'cortes'>('fotos');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const mediaEstrelas = (() => {
+    const avs = agendamentos.filter(a => a.barbeiro_id === barbeiro.id && a.avaliacao);
+    if (!avs.length) return 0;
+    return avs.reduce((s, a) => s + (a.avaliacao || 0), 0) / avs.length;
+  })();
+  const totalCortes = agendamentos.filter(a => a.barbeiro_id === barbeiro.id && a.status === 'confirmado').length;
+
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem(`fotos_b_${barbeiro.id}`);
+      if (saved) setFotos(JSON.parse(saved));
+    } catch { /* ignore */ }
+  }, [barbeiro.id]);
+
+  function salvarFotos(lista: PostFoto[]) {
+    setFotos(lista);
+    try { sessionStorage.setItem(`fotos_b_${barbeiro.id}`, JSON.stringify(lista)); } catch { /* ignore */ }
+  }
+
+  function postarFoto() {
+    if (!fotoFile) return;
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const nova: PostFoto = { id: Date.now().toString(), barbeiro_id: barbeiro.id, foto_url: e.target?.result as string, descricao, data: new Date().toLocaleDateString('pt-BR') };
+      salvarFotos([nova, ...fotos]);
+      setFotoFile(null); setPreview(null); setDescricao(''); setShowUpload(false); setUploading(false);
+    };
+    reader.readAsDataURL(fotoFile);
+  }
+
+  const cortesRecentes = agendamentos.filter(a => a.barbeiro_id === barbeiro.id).slice(0, 20);
+  const statusBadge: Record<string, string> = { confirmado: 'badge-green', pendente: 'badge-yellow', cancelado: 'badge-red' };
+
+  return (
+    <div className="modal-back" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxHeight: '95vh', overflowY: 'auto', padding: 0, borderRadius: 20, maxWidth: 500 }}>
+        <div style={{ padding: '20px 20px 0' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+            <button className="btn btn-ghost" style={{ padding: '6px 10px' }} onClick={onClose}>← Voltar</button>
+            {isProprietario && (
+              <button className="btn btn-outline" style={{ fontSize: '0.78rem', padding: '6px 14px' }} onClick={() => setShowUpload(p => !p)}>
+                {showUpload ? 'Cancelar' : '+ Postar foto'}
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start', marginBottom: 20 }}>
+            <div style={{ position: 'relative' }}>
+              <Avatar src={barbeiro.photo_url} nome={barbeiro.nome} size={88} accent="var(--green)" />
+              <div style={{ position: 'absolute', bottom: 0, right: 0, width: 20, height: 20, background: 'var(--green)', borderRadius: '50%', border: '2px solid var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.55rem' }}>✂</div>
+            </div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontWeight: 800, fontSize: '1.1rem', marginBottom: 2 }}>{barbeiro.nome}</p>
+              <p style={{ fontSize: '0.72rem', color: 'var(--green)', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>barbeiro profissional</p>
+              <div style={{ display: 'flex', gap: 20, marginBottom: 10 }}>
+                {[['fotos', fotos.length], ['cortes', totalCortes], ['★ média', mediaEstrelas ? mediaEstrelas.toFixed(1) : '—']].map(([l, v]) => (
+                  <div key={l as string} style={{ textAlign: 'center' }}>
+                    <p style={{ fontWeight: 800, fontSize: '1rem', lineHeight: 1 }}>{v}</p>
+                    <p style={{ fontSize: '0.65rem', color: 'var(--text-faint)' }}>{l}</p>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                {barbeiro.especialidades.map(e => <span key={e} className="badge badge-green" style={{ fontSize: '0.65rem' }}>{e}</span>)}
+              </div>
+            </div>
+          </div>
+
+          {showUpload && isProprietario && (
+            <div style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 14, padding: 16, marginBottom: 16 }}>
+              <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 12 }}>Nova publicação</p>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) { setFotoFile(f); setPreview(URL.createObjectURL(f)); } }} />
+              {preview ? <img src={preview} alt="preview" style={{ width: '100%', height: 200, objectFit: 'cover', borderRadius: 10, marginBottom: 10 }} /> : (
+                <button className="btn btn-outline" style={{ width: '100%', marginBottom: 10, padding: '32px 0' }} onClick={() => fileRef.current?.click()}>+ Escolher foto</button>
+              )}
+              <input className="input" placeholder="Legenda..." value={descricao} onChange={e => setDescricao(e.target.value)} style={{ marginBottom: 10 }} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                {preview && <button className="btn btn-outline" style={{ flex: 1, fontSize: '0.78rem' }} onClick={() => { setPreview(null); setFotoFile(null); }}>Trocar</button>}
+                <button className="btn btn-green" style={{ flex: 2 }} onClick={postarFoto} disabled={!fotoFile || uploading}>
+                  {uploading ? <><span className="spinner" />Publicando...</> : 'Publicar'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', marginBottom: 0 }}>
+            {(['fotos', 'cortes'] as const).map(aba => (
+              <button key={aba} onClick={() => setAbaAtiva(aba)} style={{ flex: 1, padding: '10px 0', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: abaAtiva === aba ? 'var(--green)' : 'var(--text-faint)', borderBottom: abaAtiva === aba ? '2px solid var(--green)' : '2px solid transparent', transition: 'all 0.2s' }}>
+                {aba === 'fotos' ? `Galeria (${fotos.length})` : `Agendamentos (${cortesRecentes.length})`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {abaAtiva === 'fotos' ? (
+          fotos.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--text-faint)' }}>
+              <p style={{ fontSize: '2rem', marginBottom: 8 }}>✂</p>
+              <p style={{ fontSize: '0.88rem' }}>Nenhuma foto publicada ainda</p>
+              {isProprietario && <p style={{ fontSize: '0.75rem', marginTop: 4 }}>Clique em "+ Postar foto" para começar</p>}
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, padding: 2 }}>
+              {fotos.map(foto => (
+                <div key={foto.id} onClick={() => setFotoAberta(foto)} style={{ aspectRatio: '1', cursor: 'pointer', overflow: 'hidden' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.opacity = '0.8'}
+                  onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.opacity = '1'}>
+                  <img src={foto.foto_url} alt={foto.descricao} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                </div>
+              ))}
+            </div>
+          )
+        ) : (
+          <div style={{ padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {cortesRecentes.length === 0 ? (
+              <p style={{ textAlign: 'center', color: 'var(--text-faint)', padding: 32, fontSize: '0.88rem' }}>Nenhum agendamento registrado</p>
+            ) : cortesRecentes.map(a => (
+              <div key={a.id} style={{ background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 10, padding: '12px 14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <p style={{ fontWeight: 600, fontSize: '0.88rem' }}>{a.servico}</p>
+                    <p style={{ fontSize: '0.72rem', color: 'var(--text-faint)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{new Date(a.data + 'T12:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: '2-digit' })} · {a.horario}</p>
+                    {a.avaliacao ? <Stars value={a.avaliacao} readonly /> : null}
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <span className={'badge ' + (statusBadge[a.status] || 'badge-gray')}>{a.status}</span>
+                    <p style={{ color: 'var(--green)', fontWeight: 700, fontSize: '0.88rem', marginTop: 4 }}>R${a.valor}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {fotoAberta && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.92)', zIndex: 200, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => setFotoAberta(null)}>
+            <div onClick={e => e.stopPropagation()} style={{ maxWidth: 480, width: '100%', background: 'var(--surface)', borderRadius: 16, overflow: 'hidden' }}>
+              <img src={fotoAberta.foto_url} alt={fotoAberta.descricao} style={{ width: '100%', maxHeight: '60vh', objectFit: 'cover' }} />
+              <div style={{ padding: '14px 16px' }}>
+                <p style={{ fontWeight: 700, fontSize: '0.88rem', marginBottom: 2 }}>{barbeiro.nome}</p>
+                {fotoAberta.descricao && <p style={{ fontSize: '0.82rem', color: 'var(--text-dim)' }}>{fotoAberta.descricao}</p>}
+                <p style={{ fontSize: '0.7rem', color: 'var(--text-faint)', marginTop: 4 }}>{fotoAberta.data}</p>
+                {isProprietario && (
+                  <button className="btn btn-danger" style={{ marginTop: 12, fontSize: '0.75rem', padding: '6px 14px' }}
+                    onClick={() => { salvarFotos(fotos.filter(f => f.id !== fotoAberta.id)); setFotoAberta(null); }}>Excluir foto</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AgendarModal({ session, usuario, stats, barbeiros, storeConfig, onClose, onSuccess }: {
   session: Session; usuario: Usuario | null; stats: Stats[]; barbeiros: BarbeiroDB[];
   storeConfig: StoreConfig; onClose: () => void; onSuccess: () => void;
@@ -288,6 +470,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, storeConfig, onClose
   const [termos, setTermos] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [verPerfilB, setVerPerfilB] = useState<BarbeiroDB | null>(null);
 
   const unidades = storeConfig.unidades.filter(u => u.ativo);
   const servicos = storeConfig.servicos.filter(s => s.ativo);
@@ -318,6 +501,10 @@ function AgendarModal({ session, usuario, stats, barbeiros, storeConfig, onClose
       if (!res.ok) { setError(d.error || 'Erro'); return; }
       setStep('sucesso');
     } finally { setLoading(false); }
+  }
+
+  if (verPerfilB) {
+    return <PerfilBarbeiro barbeiro={verPerfilB} agendamentos={[]} onClose={() => setVerPerfilB(null)} />;
   }
 
   return (
@@ -377,9 +564,7 @@ function AgendarModal({ session, usuario, stats, barbeiros, storeConfig, onClose
                 if (!b) return null;
                 const stat = stats.find(s => s.barbeiroId === bid);
                 return (
-                  <button key={bid} className="card card-green"
-                    style={{ padding: '16px 20px', textAlign: 'left', cursor: 'pointer', width: '100%', background: 'var(--surface)', border: '1px solid var(--border)' }}
-                    onClick={() => { setBarbeiroId(bid); setStep('servico'); }}>
+                  <div key={bid} className="card" style={{ padding: '16px 20px', border: '1px solid var(--border)', background: 'var(--surface)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                       <Avatar src={b.photo_url} nome={b.nome} size={48} />
                       <div style={{ flex: 1 }}>
@@ -389,9 +574,14 @@ function AgendarModal({ session, usuario, stats, barbeiros, storeConfig, onClose
                           {b.especialidades.map(e => <span key={e} className="badge badge-gray">{e}</span>)}
                         </div>
                       </div>
-                      <span style={{ color: 'var(--text-faint)' }}>→</span>
                     </div>
-                  </button>
+                    <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+                      <button className="btn btn-outline" style={{ flex: 1, fontSize: '0.78rem' }}
+                        onClick={() => setVerPerfilB(b)}>Ver perfil</button>
+                      <button className="btn btn-green" style={{ flex: 2 }}
+                        onClick={() => { setBarbeiroId(bid); setStep('servico'); }}>Selecionar →</button>
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -506,6 +696,8 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, storeConf
 }) {
   const [avaliacoes, setAvaliacoes] = useState<Record<string, number>>({});
   const [savingAv, setSavingAv] = useState<string | null>(null);
+  const [mostrarTodos, setMostrarTodos] = useState(false);
+  const [perfilAberto, setPerfilAberto] = useState<BarbeiroDB | null>(null);
 
   useEffect(() => {
     const av: Record<string, number> = {};
@@ -536,10 +728,17 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, storeConf
 
   const statusBadge: Record<string, string> = { confirmado: 'badge-green', pendente: 'badge-yellow', cancelado: 'badge-red' };
 
-  const top3 = [...barbeiros].map(b => ({ ...b, stat: stats.find(s => s.barbeiroId === b.id) }))
-    .sort((a, b) => (b.stat?.mediaEstrelas || 0) - (a.stat?.mediaEstrelas || 0)).slice(0, 3);
+  const rankBarbeiros = [...barbeiros].filter(b => b.ativo).map(b => ({ ...b, stat: stats.find(s => s.barbeiroId === b.id) }))
+    .sort((a, b) => (b.stat?.mediaEstrelas || 0) - (a.stat?.mediaEstrelas || 0));
+  const top3 = rankBarbeiros.slice(0, 3);
+  const todosBarbeiros = rankBarbeiros;
 
   const displayName = usuario?.username ? `@${usuario.username}` : session.nome.split(' ')[0];
+
+  if (perfilAberto) {
+    const isProprietario = session.role === 'barbeiro' && usuario?.barbeiro_id === perfilAberto.id;
+    return <PerfilBarbeiro barbeiro={perfilAberto} agendamentos={agendamentos} onClose={() => setPerfilAberto(null)} isProprietario={isProprietario} />;
+  }
 
   return (
     <div>
@@ -637,7 +836,7 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, storeConf
             const media = b.stat?.mediaEstrelas || 0;
             const total = b.stat?.totalAvaliacoes || 0;
             return (
-              <div key={b.id} style={{ background: 'var(--surface)', border: `1px solid ${acc.border}`, borderRadius: 16, padding: '20px 16px 18px', position: 'relative', overflow: 'hidden', transition: 'transform 0.2s, box-shadow 0.2s' }}
+              <div key={b.id} style={{ background: 'var(--surface)', border: `1px solid ${acc.border}`, borderRadius: 16, padding: '20px 16px 14px', position: 'relative', overflow: 'hidden', transition: 'transform 0.2s, box-shadow 0.2s' }}
                 onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-3px)'; (e.currentTarget as HTMLDivElement).style.boxShadow = `0 8px 32px ${acc.glow}`; }}
                 onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.transform = 'none'; (e.currentTarget as HTMLDivElement).style.boxShadow = 'none'; }}>
                 <div style={{ position: 'absolute', top: 10, right: 10, fontFamily: 'var(--font-display)', fontSize: '1.4rem', color: acc.color, opacity: 0.25 }}>#{i + 1}</div>
@@ -645,15 +844,52 @@ function Dashboard({ session, usuario, stats, agendamentos, barbeiros, storeConf
                   <Avatar src={b.photo_url} nome={b.nome} size={48} accent={acc.color} />
                 </div>
                 <p style={{ fontWeight: 800, fontSize: '0.88rem', marginBottom: 2 }}>{b.nome.split(' ')[0]}</p>
-                <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginBottom: 10 }}>{b.nome.split(' ').slice(1).join(' ')}</p>
+                <p style={{ fontSize: '0.68rem', color: 'var(--text-faint)', marginBottom: 8 }}>{b.nome.split(' ').slice(1).join(' ')}</p>
                 <div style={{ display: 'flex', gap: 2, marginBottom: 3 }}>
                   {[1, 2, 3, 4, 5].map(n => <span key={n} style={{ fontSize: '0.85rem', color: n <= Math.round(media) ? acc.color : 'var(--surface3)' }}>★</span>)}
                 </div>
-                <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-faint)' }}>{media ? media.toFixed(1) : '—'} · {total} av.</p>
+                <p style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: 'var(--text-faint)', marginBottom: 10 }}>{media ? media.toFixed(1) : '—'} · {total} av.</p>
+                <button onClick={() => setPerfilAberto(b)} style={{ width: '100%', padding: '7px 0', borderRadius: 8, background: 'none', border: `1px solid ${acc.border}`, color: acc.color, fontSize: '0.72rem', fontWeight: 700, cursor: 'pointer', transition: 'background 0.15s' }}
+                  onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = acc.color + '22'}
+                  onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.background = 'none'}>
+                  Ver perfil
+                </button>
               </div>
             );
           })}
         </div>
+
+        {/* Botão ver todos */}
+        {todosBarbeiros.length > 3 && (
+          <button onClick={() => setMostrarTodos(p => !p)}
+            style={{ width: '100%', marginTop: 12, padding: '12px 0', borderRadius: 10, background: 'none', border: '1px solid var(--border)', color: 'var(--text-faint)', fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, transition: 'all 0.2s' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--green)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--green)'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = 'var(--border)'; (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-faint)'; }}>
+            {mostrarTodos ? '↑ Mostrar menos' : `↓ Ver todos os barbeiros (${todosBarbeiros.length})`}
+          </button>
+        )}
+        {mostrarTodos && (
+          <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {todosBarbeiros.map(b => {
+              const media = b.stat?.mediaEstrelas || 0;
+              return (
+                <div key={b.id} className="card" style={{ padding: '14px 16px', display: 'flex', alignItems: 'center', gap: 14 }}>
+                  <Avatar src={b.photo_url} nome={b.nome} size={44} />
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontWeight: 700, fontSize: '0.9rem' }}>{b.nome}</p>
+                    <div style={{ display: 'flex', gap: 2 }}>
+                      {[1,2,3,4,5].map(n => <span key={n} style={{ fontSize: '0.75rem', color: n <= Math.round(media) ? 'var(--yellow)' : 'var(--surface3)' }}>★</span>)}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, marginTop: 4 }}>
+                      {b.especialidades.map(e => <span key={e} className="badge badge-gray" style={{ fontSize: '0.62rem' }}>{e}</span>)}
+                    </div>
+                  </div>
+                  <button onClick={() => setPerfilAberto(b)} className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '7px 14px' }}>Perfil</button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Agendamentos */}
@@ -758,6 +994,10 @@ function Configuracoes({ session, usuario, barbeiros, storeConfig, onUpdate, onL
   const [senhaError, setSenhaError] = useState('');
   const [senhaOk, setSenhaOk] = useState(false);
   const [savingSenha, setSavingSenha] = useState(false);
+  const [showSenhaSection, setShowSenhaSection] = useState(false);
+  const [showSenhaAtual, setShowSenhaAtual] = useState(false);
+  const [showSenhaNova, setShowSenhaNova] = useState(false);
+  const [showSenhaConfirm, setShowSenhaConfirm] = useState(false);
 
   // Perfil
   const [nomeEdit, setNomeEdit] = useState(session.nome);
@@ -810,6 +1050,7 @@ function Configuracoes({ session, usuario, barbeiros, storeConfig, onUpdate, onL
     setSavingSenha(false);
     if (!res.ok) { setSenhaError(d.error || 'Erro'); return; }
     setSenhaOk(true); setSenhaAtual(''); setSenhaNova(''); setSenhaConfirm('');
+    setTimeout(() => { setSenhaOk(false); setShowSenhaSection(false); }, 2500);
   }
 
   async function excluirConta() {
@@ -924,18 +1165,38 @@ function Configuracoes({ session, usuario, barbeiros, storeConfig, onUpdate, onL
         </div>
       </S>
 
-      <S title="Alterar senha">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <input type="password" className="input" placeholder="Senha atual" value={senhaAtual} onChange={e => setSenhaAtual(e.target.value)} />
-          <input type="password" className="input" placeholder="Nova senha" value={senhaNova} onChange={e => setSenhaNova(e.target.value)} />
-          <input type="password" className="input" placeholder="Confirmar nova senha" value={senhaConfirm} onChange={e => setSenhaConfirm(e.target.value)} />
-          {senhaError && <p style={{ color: 'var(--red)', fontSize: '0.8rem' }}>{senhaError}</p>}
-          {senhaOk && <p style={{ color: 'var(--green)', fontSize: '0.8rem' }}>Senha alterada com sucesso</p>}
-          <button className="btn btn-outline" onClick={alterarSenha} disabled={savingSenha}>
-            {savingSenha ? <><span className="spinner" />Salvando...</> : 'Alterar senha'}
+      {/* Alterar senha — oculto por padrão */}
+      <div className="card anim-up" style={{ padding: '20px 22px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <p style={{ fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-faint)' }}>Segurança</p>
+          <button className="btn btn-outline" style={{ fontSize: '0.72rem', padding: '5px 12px' }}
+            onClick={() => setShowSenhaSection(p => !p)}>
+            {showSenhaSection ? 'Cancelar' : 'Alterar senha'}
           </button>
         </div>
-      </S>
+        {showSenhaSection && (
+          <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {[
+              [senhaAtual, setSenhaAtual, 'Senha atual', showSenhaAtual, () => setShowSenhaAtual((p:boolean) => !p)],
+              [senhaNova, setSenhaNova, 'Nova senha', showSenhaNova, () => setShowSenhaNova((p:boolean) => !p)],
+              [senhaConfirm, setSenhaConfirm, 'Confirmar nova senha', showSenhaConfirm, () => setShowSenhaConfirm((p:boolean) => !p)],
+            ].map(([val, setter, ph, show, toggle]: any) => (
+              <div key={ph} style={{ position: 'relative' }}>
+                <input type={show ? 'text' : 'password'} className="input" placeholder={ph} value={val}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setter(e.target.value)} style={{ paddingRight: 72 }} />
+                <button onClick={toggle} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-faint)', cursor: 'pointer', fontSize: '0.7rem', fontFamily: 'var(--font-mono)', padding: '4px 6px' }}>
+                  {show ? 'ocultar' : 'mostrar'}
+                </button>
+              </div>
+            ))}
+            {senhaError && <p style={{ color: 'var(--red)', fontSize: '0.8rem' }}>{senhaError}</p>}
+            {senhaOk && <p style={{ color: 'var(--green)', fontSize: '0.8rem' }}>Senha alterada com sucesso</p>}
+            <button className="btn btn-green" onClick={alterarSenha} disabled={savingSenha}>
+              {savingSenha ? <><span className="spinner" />Salvando...</> : 'Confirmar alteração'}
+            </button>
+          </div>
+        )}
+      </div>
 
       <S title="Sessão">
         <button className="btn btn-outline" style={{ width: '100%', marginBottom: 10 }} onClick={onLogout}>Sair da sessão</button>
@@ -969,7 +1230,10 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
   const [filtroStatus, setFiltroStatus] = useState('todos');
   const [filtroBarbeiro, setFiltroBarbeiro] = useState('');
 
+  const [showSenhaAdmin, setShowSenhaAdmin] = useState(false);
+
   // Barbeiro form
+  const [perfilBarbeiroAdmin, setPerfilBarbeiroAdmin] = useState<BarbeiroDB | null>(null);
   const [bFormOpen, setBFormOpen] = useState(false);
   const [bEditId, setBEditId] = useState<string | null>(null);
   const [bNome, setBNome] = useState('');
@@ -1072,12 +1336,22 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
 
   async function salvarLoja() {
     setStoreError(''); setStoreSaving(true);
-    const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(storeConfig) });
-    const d = await res.json();
-    setStoreSaving(false);
-    if (!res.ok) { setStoreError(d.error || 'Erro'); return; }
-    setStoreSaved(true); setTimeout(() => setStoreSaved(false), 2500);
-    setStoreConfig(d.config); onRefresh();
+    try {
+      const res = await fetch('/api/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(storeConfig),
+      });
+      const d = await res.json();
+      if (!res.ok) { setStoreError(d.error || 'Erro ao salvar configurações'); return; }
+      setStoreSaved(true); setTimeout(() => setStoreSaved(false), 2500);
+      if (d.config) setStoreConfig(d.config);
+      onRefresh();
+    } catch {
+      setStoreError('Falha de conexão. Tente novamente.');
+    } finally {
+      setStoreSaving(false);
+    }
   }
 
   function updateUnidade(idx: number, field: string, value: unknown) {
@@ -1127,6 +1401,15 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
   const statusBadge: Record<string, string> = { confirmado: 'badge-green', pendente: 'badge-yellow', cancelado: 'badge-red' };
 
   const isDono = session.role === 'dono';
+
+  if (perfilBarbeiroAdmin) {
+    return (
+      <div>
+        <button className="btn btn-outline" style={{ marginBottom: 16 }} onClick={() => setPerfilBarbeiroAdmin(null)}>← Voltar ao admin</button>
+        <PerfilBarbeiro barbeiro={perfilBarbeiroAdmin} agendamentos={agendamentos} onClose={() => setPerfilBarbeiroAdmin(null)} isProprietario={true} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1372,6 +1655,7 @@ function AdminPanel({ session, barbeiros: barbeirosInit, storeConfig: storeConfi
                     </p>
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={() => setPerfilBarbeiroAdmin(b)}>Perfil</button>
                     <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: '0.72rem' }} onClick={() => {
                       setBFormOpen(true);
                       setBEditId(b.id);
