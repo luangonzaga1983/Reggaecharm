@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { v4 as uuidv4 } from 'uuid';
 import {
   getAllBarbeiros, getBarbeiroById, createBarbeiro,
-  updateBarbeiro, deleteBarbeiro, uploadBarberPhoto, getUsuarioById, BarbeiroDB,
+  updateBarbeiro, deleteBarbeiro, uploadBarberPhoto, BarbeiroDB,
 } from '@/lib/discord';
 import { getSession, canDo } from '@/lib/auth';
 
@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ barbeiro: b });
     }
     const barbeiros = await getAllBarbeiros();
+    // Com ?todos=1 retorna inativos também (para o admin)
     const filtrados = todos === '1' ? barbeiros : barbeiros.filter(b => b.ativo);
     return NextResponse.json({ barbeiros: filtrados });
   } catch (err) {
@@ -28,43 +29,25 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const session = await getSession();
   if (!session) return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+  if (!canDo(session.role, 'acesso_admin')) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
+  }
 
   const contentType = req.headers.get('content-type') || '';
 
   try {
-    // ── Upload de foto de capa: gerente/dono OU o próprio barbeiro ────────────
     if (contentType.includes('multipart/form-data')) {
       const form = await req.formData();
       const barbeiroId = form.get('barbeiro_id') as string;
       const file = form.get('foto') as File | null;
-      if (!barbeiroId || !file) {
-        return NextResponse.json({ error: 'barbeiro_id e foto são obrigatórios' }, { status: 400 });
-      }
-
-      // Barbeiro só pode editar o próprio perfil
-      if (!canDo(session.role, 'acesso_admin')) {
-        if (session.role !== 'barbeiro') {
-          return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
-        }
-        const usuario = await getUsuarioById(session.id);
-        if (!usuario || usuario.barbeiro_id !== barbeiroId) {
-          return NextResponse.json({ error: 'Sem permissão — apenas seu próprio perfil' }, { status: 403 });
-        }
-      }
+      if (!barbeiroId || !file) return NextResponse.json({ error: 'barbeiro_id e foto são obrigatórios' }, { status: 400 });
 
       const barbeiro = await getBarbeiroById(barbeiroId);
-      if (!barbeiro || !barbeiro._messageId) {
-        return NextResponse.json({ error: 'Barbeiro não encontrado' }, { status: 404 });
-      }
+      if (!barbeiro || !barbeiro._messageId) return NextResponse.json({ error: 'Barbeiro não encontrado' }, { status: 404 });
 
       const buffer = await file.arrayBuffer();
       const freshUrl = await uploadBarberPhoto(barbeiro._messageId, barbeiro, buffer, file.name, file.type || 'image/jpeg');
       return NextResponse.json({ ok: true, photo_url: freshUrl });
-    }
-
-    // ── Ações de escrita exigem acesso_admin ──────────────────────────────────
-    if (!canDo(session.role, 'acesso_admin')) {
-      return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
     }
 
     const body = await req.json();

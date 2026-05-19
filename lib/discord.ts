@@ -5,6 +5,7 @@ const CHANNEL_USUARIOS = process.env.DISCORD_CHANNEL_USUARIOS!;
 const CHANNEL_AGENDAMENTOS = process.env.DISCORD_CHANNEL_AGENDAMENTOS!;
 const CHANNEL_BARBEIROS = process.env.DISCORD_CHANNEL_BARBEIROS!;
 const CHANNEL_CONFIG = process.env.DISCORD_CHANNEL_CONFIG || process.env.DISCORD_CHANNEL_USUARIOS!;
+const CHANNEL_FOTOS_BARBEIROS = process.env.DISCORD_CHANNEL_FOTOS_BARBEIROS || process.env.DISCORD_CHANNEL_BARBEIROS!;
 const BASE_URL = 'https://discord.com/api/v10';
 
 const discordHeaders = {
@@ -438,4 +439,58 @@ export async function desbanirUsuario(usuario: Usuario): Promise<void> {
   usuario.ban_motivo = null;
   usuario.ban_ip = null;
   await updateUsuario(usuario);
+}
+
+// ─── Fotos do Barbeiro (galeria de perfil) ────────────────────────────────────
+
+export interface FotoBarbeiro {
+  id: string;
+  barbeiro_id: string;
+  descricao: string;
+  data: string;
+  foto_url?: string | null;
+  _messageId?: string;
+}
+
+function parseFotoBarbeiro(msg: DiscordMessage): FotoBarbeiro | null {
+  try {
+    const data = JSON.parse(msg.content);
+    if (data.__type !== 'foto_barbeiro') return null;
+    const { __type, ...rest } = data;
+    return { ...rest, foto_url: msg.attachments?.[0]?.url ?? null, _messageId: msg.id };
+  } catch { return null; }
+}
+
+export async function getFotosByBarbeiro(barbeiroId: string): Promise<FotoBarbeiro[]> {
+  const messages = await fetchAllMessages(CHANNEL_FOTOS_BARBEIROS);
+  return messages
+    .map(parseFotoBarbeiro)
+    .filter((f): f is FotoBarbeiro => f !== null && f.barbeiro_id === barbeiroId);
+}
+
+export async function createFotoBarbeiro(
+  barbeiroId: string,
+  descricao: string,
+  fileBuffer: ArrayBuffer,
+  filename: string,
+  mimeType: string,
+): Promise<FotoBarbeiro> {
+  const id = 'f' + Date.now();
+  const data = new Date().toLocaleDateString('pt-BR');
+  const meta = JSON.stringify({ __type: 'foto_barbeiro', id, barbeiro_id: barbeiroId, descricao, data });
+  const formData = new FormData();
+  formData.append('content', meta);
+  formData.append('files[0]', new Blob([fileBuffer], { type: mimeType }), filename);
+  const res = await fetch(`${BASE_URL}/channels/${CHANNEL_FOTOS_BARBEIROS}/messages`, {
+    method: 'POST', headers: { Authorization: `Bot ${DISCORD_TOKEN}` }, body: formData,
+  });
+  if (!res.ok) throw new Error(`Discord foto upload failed: ${res.status}`);
+  const msg: DiscordMessage = await res.json();
+  return { id, barbeiro_id: barbeiroId, descricao, data, foto_url: msg.attachments?.[0]?.url ?? null, _messageId: msg.id };
+}
+
+export async function deleteFotoBarbeiro(messageId: string): Promise<void> {
+  await fetch(`${BASE_URL}/channels/${CHANNEL_FOTOS_BARBEIROS}/messages/${messageId}`, {
+    method: 'DELETE', headers: discordHeaders,
+  });
 }
