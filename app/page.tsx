@@ -19,6 +19,11 @@ export default function App() {
   const [agendarOpen, setAgendarOpen] = useState(false);
   const [perfilAberto, setPerfilAberto] = useState<BarbeiroDB | null>(null);
 
+  // Aplicar tema/reggae — deve ficar ANTES de qualquer return condicional (regra dos hooks)
+  useEffect(() => {
+    if (app.storeConfig) applyStoreTheme(app.storeConfig);
+  }, [app.storeConfig]);
+
   // ── Loading ──────────────────────────────────────────────────────────────────
   if (app.loading) return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 20, background: 'var(--black)' }}>
@@ -55,11 +60,6 @@ export default function App() {
   );
 
   const { session, usuario, agendamentos, adminAgs, barbeiros, stats, storeConfig, refresh, logout } = app;
-
-  // Aplicar tema/reggae sempre que storeConfig mudar
-  useEffect(() => {
-    if (storeConfig) applyStoreTheme(storeConfig);
-  }, [storeConfig]);
 
   const tabs      = getTabsForRole(session.role);
   const activeTab = tabs.includes(tab) ? tab : tabs[0];
