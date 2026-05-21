@@ -9,7 +9,7 @@ const TOKEN   = () => { const t = process.env.DISCORD_TOKEN;               if (!
 const CH_USR  = () => { const t = process.env.DISCORD_CHANNEL_USUARIOS;    if (!t) throw new Error('DISCORD_CHANNEL_USUARIOS not set');    return t; };
 const CH_AGD  = () => { const t = process.env.DISCORD_CHANNEL_AGENDAMENTOS; if (!t) throw new Error('DISCORD_CHANNEL_AGENDAMENTOS not set'); return t; };
 const CH_BAR  = () => { const t = process.env.DISCORD_CHANNEL_BARBEIROS;   if (!t) throw new Error('DISCORD_CHANNEL_BARBEIROS not set');   return t; };
-const CH_CFG  = () => process.env.DISCORD_CHANNEL_CONFIG || CH_USR();
+const CH_CFG  = () => { const t = process.env.DISCORD_CHANNEL_CONFIG || process.env.DISCORD_CHANNEL_USUARIOS; if (!t) throw new Error('DISCORD_CHANNEL_CONFIG not set'); return t; };
 const CH_FOTO = () => process.env.DISCORD_CHANNEL_FOTOS_BARBEIROS || CH_BAR();
 
 const BASE = 'https://discord.com/api/v10';
