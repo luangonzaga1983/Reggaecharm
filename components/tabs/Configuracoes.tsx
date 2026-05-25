@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from 'react';
 import type { Session, Usuario, BarbeiroDB, StoreConfig } from '@/types';
 import { ROLE_LABEL, ROLE_COLOR, gerarHorarios, applyTheme, getStoredTheme } from '@/utils';
 import Avatar from '@/components/ui/Avatar';
+import PushButton from '@/components/ui/PushButton';
 
 interface Props {
   session: Session; usuario: Usuario | null; barbeiros: BarbeiroDB[];
@@ -102,6 +103,8 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
         <p style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Painel</p>
         <h1 style={{ fontSize: 22, fontWeight: 600 }}>Conta</h1>
       </header>
+
+      <div style={{ marginBottom: 12 }}><PushButton /></div>
 
       <Section title="Foto de perfil">
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>

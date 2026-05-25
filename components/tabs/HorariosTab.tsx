@@ -1,18 +1,30 @@
 'use client';
 import { useState } from 'react';
-import type { Session, Usuario, Agendamento, BarbeiroDB, StoreConfig } from '@/types';
+import type { Session, Usuario, Agendamento, BarbeiroDB, StoreConfig, ClienteResumo } from '@/types';
 import { formatDate } from '@/utils';
 import Avatar from '@/components/ui/Avatar';
 import Reveal from '@/components/ui/Reveal';
 
 interface Props {
   session: Session; usuario: Usuario | null; barbeiros: BarbeiroDB[];
-  agendamentos: Agendamento[]; storeConfig: StoreConfig; onRefresh: () => void;
+  agendamentos: Agendamento[]; clientes: Record<string, ClienteResumo>;
+  storeConfig: StoreConfig; onRefresh: () => void;
 }
 
-export default function HorariosTab({ session, barbeiros, agendamentos, storeConfig, onRefresh }: Props) {
+export default function HorariosTab({ session, barbeiros, agendamentos, clientes, storeConfig, onRefresh }: Props) {
   const [filtroData, setFiltroData] = useState('');
   const [busy, setBusy]             = useState<string | null>(null);
+  const [verHistorico, setVerHistorico] = useState(false);
+
+  async function editarApelido(usuarioId: string, atual: string | null) {
+    const novo = prompt('Apelido do cliente (deixe vazio para remover):', atual ?? '');
+    if (novo === null) return;
+    await fetch('/api/usuarios', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'apelido', usuario_id: usuarioId, apelido: novo.trim() }),
+    });
+    onRefresh();
+  }
 
   const isBarbeiro = session.role === 'barbeiro';
   const now        = Date.now();
@@ -22,6 +34,12 @@ export default function HorariosTab({ session, barbeiros, agendamentos, storeCon
   const fila = agendamentos
     .filter(a => a.status !== 'cancelado' && (a.presenca ?? 'pendente') === 'pendente' && (!filtroData || a.data === filtroData))
     .sort((a, b) => a.data.localeCompare(b.data) || a.horario.localeCompare(b.horario));
+
+  // Histórico = cortes já resolvidos (compareceu/faltou) ou cancelados. Mais recentes primeiro.
+  const historico = agendamentos
+    .filter(a => a.status === 'cancelado' || (a.presenca && a.presenca !== 'pendente'))
+    .filter(a => !filtroData || a.data === filtroData)
+    .sort((a, b) => b.data.localeCompare(a.data) || b.horario.localeCompare(a.horario));
 
   const hoje  = new Date().toISOString().split('T')[0];
   const getB  = (id: string) => barbeiros.find(b => b.id === id);
@@ -58,9 +76,13 @@ export default function HorariosTab({ session, barbeiros, agendamentos, storeCon
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
         <input type="date" className="input" style={{ flex: 1, minWidth: 160 }} value={filtroData} onChange={e => setFiltroData(e.target.value)} />
         {filtroData && <button className="btn btn-ghost" onClick={() => setFiltroData('')}>Limpar</button>}
-        <span style={{ fontSize: 12, color: 'var(--text-faint)', marginLeft: 'auto' }}>{fila.length} na fila</span>
+        <button className={`btn ${verHistorico ? 'btn-primary' : 'btn-outline'}`} style={{ fontSize: 12 }} onClick={() => setVerHistorico(v => !v)}>
+          {verHistorico ? 'Ver fila' : 'Histórico'}
+        </button>
+        <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>{verHistorico ? `${historico.length} no histórico` : `${fila.length} na fila`}</span>
       </div>
 
+      {!verHistorico && (
       <div className="scene" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {fila.length === 0 ? (
           <div style={{ textAlign: 'center', color: 'var(--text-faint)', padding: '40px 20px', fontSize: 13 }}>
@@ -80,9 +102,23 @@ export default function HorariosTab({ session, barbeiros, agendamentos, storeCon
                       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
                         {!isBarbeiro && b && <Avatar src={b.photo_url} nome={b.nome} size={22} />}
                         {!isBarbeiro && <span style={{ fontWeight: 600, fontSize: 13 }}>{b?.nome}</span>}
-                        {a.pago ? <span className="badge badge-green">pago</span> : <span className="badge badge-yellow">aguardando pagto</span>}
+                        {a.pago ? <span className="badge badge-green">pago</span>
+                          : a.pagamento_metodo === 'dinheiro' ? <span className="badge badge-yellow">💵 dinheiro na barbearia</span>
+                          : <span className="badge badge-yellow">aguardando pagto</span>}
                         {isHoje && <span className="badge badge-gray">hoje</span>}
                       </div>
+                      {(() => {
+                        const c = clientes[a.usuario_id];
+                        return (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 13, fontWeight: 600 }}>{c?.apelido || c?.nome || 'Cliente'}</span>
+                            {c?.apelido && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>({c.nome})</span>}
+                            {c?.fiel && <span className="badge badge-green" title={`${c.total_cortes} cortes`}>FIEL</span>}
+                            <button onClick={() => editarApelido(a.usuario_id, c?.apelido ?? null)} title="Editar apelido"
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-faint)', fontSize: 12, lineHeight: 1, padding: '0 2px' }}>✎</button>
+                          </div>
+                        );
+                      })()}
                       <p style={{ fontSize: 13, fontWeight: 600 }}>{a.servico}</p>
                       <p className="text-mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>
                         {formatDate(a.data, { weekday: 'short', day: '2-digit', month: 'short' })} · {a.horario}
@@ -109,6 +145,45 @@ export default function HorariosTab({ session, barbeiros, agendamentos, storeCon
           })
         )}
       </div>
+      )}
+
+      {verHistorico && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {historico.length === 0 ? (
+            <div style={{ textAlign: 'center', color: 'var(--text-faint)', padding: '40px 20px', fontSize: 13 }}>
+              Nenhum corte no histórico.
+            </div>
+          ) : (
+            historico.map(a => {
+              const b = getB(a.barbeiro_id);
+              const u = getU(a.unidade_id);
+              const c = clientes[a.usuario_id];
+              const cancelado = a.status === 'cancelado';
+              const faltou = a.presenca === 'faltou';
+              return (
+                <div key={a.id} className="card" style={{ padding: 12, opacity: cancelado ? 0.6 : 1 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600 }}>{c?.apelido || c?.nome || 'Cliente'}</span>
+                        {c?.fiel && <span className="badge badge-green">FIEL</span>}
+                        {cancelado ? <span className="badge badge-red">cancelado</span>
+                          : faltou ? <span className="badge badge-red">faltou</span>
+                          : <span className="badge badge-green">compareceu</span>}
+                      </div>
+                      <p style={{ fontSize: 13 }}>{a.servico}{!isBarbeiro && b ? ` · ${b.nome}` : ''}</p>
+                      <p className="text-mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>
+                        {formatDate(a.data, { day: '2-digit', month: 'short', year: '2-digit' })} · {a.horario}{u ? ` · ${u.bairro}` : ''}
+                      </p>
+                    </div>
+                    <p style={{ fontWeight: 700, fontSize: 14 }}>R$ {a.valor}</p>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
     </div>
   );
 }

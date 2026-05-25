@@ -37,8 +37,45 @@ export interface Usuario {
   multa_pendente?: number | null;
   /** Histórico curto de faltas (timestamps ISO) — usado para mostrar no perfil. */
   faltas?: string[] | null;
+  /** Apelido global definido pelo staff (visível só para barbeiro/gerente/dono). */
+  apelido?: string | null;
+  /** ISO do último push "tá na hora de cortar" enviado (anti-spam do cron). */
+  ultimo_lembrete?: string | null;
   senha: string;
   _messageId?: string;
+}
+
+/** Inscrição de Web Push (1 por dispositivo/navegador). */
+export interface PushSub {
+  id: string;
+  usuario_id: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  created_at: string;
+  _messageId?: string;
+}
+
+/** Reserva de fila: 1 pessoa por slot ocupado. Vira agendamento se o slot vagar. */
+export interface ReservaFila {
+  id: string;
+  barbeiro_id: string;
+  unidade_id: string;
+  servico: string;
+  valor: number;
+  data: string;
+  horario: string;
+  usuario_id: string;
+  created_at: string;
+  _messageId?: string;
+}
+
+/** Resumo do cliente enviado ao staff junto da agenda (escopo seguro). */
+export interface ClienteResumo {
+  nome: string;
+  apelido: string | null;
+  fiel: boolean;
+  total_cortes: number;
 }
 
 export type UsuarioSafe = Omit<Usuario, 'senha'>;
@@ -68,6 +105,10 @@ export interface Agendamento {
   presenca?: PresencaStatus | null;
   /** Multa aplicada por falta (BRL). Default 10. */
   multa_aplicada?: number | null;
+  /** Forma de pagamento: 'pix' (online) ou 'dinheiro' (na barbearia). Default 'pix'. */
+  pagamento_metodo?: 'pix' | 'dinheiro' | null;
+  /** Já enviou o push "falta 1h30" para este corte (anti-duplicata do cron). */
+  aviso_corte?: boolean | null;
   _messageId?: string;
 }
 

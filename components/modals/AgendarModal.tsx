@@ -38,8 +38,10 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
   const [data, setData]             = useState('');
   const [horario, setHorario]       = useState('');
   const [ocupados, setOcupados]     = useState<string[]>([]);
+  const [reservados, setReservados] = useState<string[]>([]);
   const [folgaDia, setFolgaDia]     = useState(false);
   const [termos, setTermos]         = useState(false);
+  const [metodoPg, setMetodoPg]     = useState<'pix' | 'dinheiro'>('pix');
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState('');
   const [verPerfilB, setVerPerfilB] = useState<BarbeiroDB | null>(null);
@@ -68,8 +70,8 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
   useEffect(() => {
     if (barbeiroId && unidadeId && data) {
       fetch(`/api/agendamentos?action=horarios&barbeiro_id=${encodeURIComponent(barbeiroId)}&data=${encodeURIComponent(data)}`)
-        .then(r => r.json()).then(d => { setOcupados(d.ocupados || []); setFolgaDia(!!d.folga_dia_todo); })
-        .catch(() => { setOcupados([]); setFolgaDia(false); });
+        .then(r => r.json()).then(d => { setOcupados(d.ocupados || []); setReservados(d.reservados || []); setFolgaDia(!!d.folga_dia_todo); })
+        .catch(() => { setOcupados([]); setReservados([]); setFolgaDia(false); });
     }
   }, [barbeiroId, unidadeId, data]);
 
@@ -82,13 +84,16 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
       const res = await fetch('/api/agendamentos', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'criar', barbeiro_id: barbeiroId, unidade_id: unidadeId, servico: servico?.nome, data, horario }),
+        body: JSON.stringify({ action: 'criar', barbeiro_id: barbeiroId, unidade_id: unidadeId, servico: servico?.nome, data, horario, pagamento_metodo: metodoPg }),
       });
       const d = await res.json();
       if (!res.ok) { setError(d.error || 'Erro'); return; }
       const novoId: string = d.agendamento?.id;
       if (!novoId) { setError('Erro ao obter id do agendamento'); return; }
       setAgId(novoId);
+
+      // Pagamento na barbearia (dinheiro): sem PIX, vai direto pro sucesso.
+      if (metodoPg === 'dinheiro') { setStep('sucesso'); return; }
 
       // Gera PIX imediato
       const r2 = await fetch('/api/pix/generate', {
@@ -110,6 +115,23 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
     } catch {
       setError('Erro de conexão');
     } finally { setLoading(false); }
+  }
+
+  // Entrar na fila de um horário ocupado (máx 1 pessoa por slot).
+  async function reservarFila(h: string) {
+    if (!confirm(`O horário ${h} está ocupado. Quer entrar na fila? Se a pessoa cancelar, vira seu agendamento e você recebe aviso para pagar.`)) return;
+    setLoading(true); setError('');
+    try {
+      const res = await fetch('/api/agendamentos', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reservar_fila', barbeiro_id: barbeiroId, unidade_id: unidadeId, servico: servico?.nome, data, horario: h }),
+      });
+      const d = await res.json();
+      if (!res.ok) { alert(d.error || 'Não foi possível entrar na fila'); return; }
+      alert('Você entrou na fila! Se o horário vagar, vira seu agendamento.');
+      onSuccess(); onClose();
+    } catch { alert('Erro de conexão'); }
+    finally { setLoading(false); }
   }
 
   // Poll status do PIX
@@ -317,28 +339,34 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
                   {horarios.map(h => {
-                    const busy = ocupados.includes(h);
-                    const sel = horario === h;
+                    const busy    = ocupados.includes(h);
+                    const naFila  = reservados.includes(h);   // já tem 1 pessoa na fila
+                    const filaCheia = busy && naFila;
+                    const podeFila  = busy && !naFila;          // ocupado e fila vazia → pode reservar
+                    const sel     = horario === h;
                     return (
                       <button
                         key={h}
-                        disabled={busy}
-                        onClick={() => { setHorario(h); setStep('termos'); }}
+                        disabled={filaCheia || loading}
+                        onClick={() => busy ? reservarFila(h) : (setHorario(h), setStep('termos'))}
+                        title={podeFila ? 'Ocupado — entrar na fila' : filaCheia ? 'Ocupado, fila cheia' : ''}
                         style={{
                           padding: '9px 4px',
                           borderRadius: 8,
-                          fontSize: 13,
+                          fontSize: filaCheia || podeFila ? 10.5 : 13,
                           fontWeight: 600,
                           fontFamily: 'var(--font-mono)',
-                          cursor: busy ? 'not-allowed' : 'pointer',
-                          border: '1px solid',
+                          cursor: filaCheia ? 'not-allowed' : 'pointer',
+                          border: podeFila ? '1px dashed var(--warning)' : '1px solid',
                           background: busy ? 'transparent' : sel ? 'var(--accent)' : 'var(--surface2)',
-                          color: busy ? 'var(--text-faint)' : sel ? 'var(--accent-contrast)' : 'var(--text)',
-                          borderColor: busy ? 'var(--border)' : sel ? 'var(--accent)' : 'var(--border)',
-                          textDecoration: busy ? 'line-through' : 'none',
+                          color: filaCheia ? 'var(--text-faint)' : podeFila ? 'var(--warning)' : sel ? 'var(--accent-contrast)' : 'var(--text)',
+                          borderColor: podeFila ? 'var(--warning)' : sel ? 'var(--accent)' : 'var(--border)',
+                          lineHeight: 1.2,
                           transition: 'transform 0.12s ease',
                         }}
-                      >{h}</button>
+                      >
+                        {filaCheia ? `${h} · fila` : podeFila ? `${h} · fila?` : h}
+                      </button>
                     );
                   })}
                 </div>
@@ -374,9 +402,34 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
                 Concordo com os termos, me comprometo a comparecer no horário agendado e aceito a multa de R$ 10,00 em caso de falta sem aviso prévio.
               </span>
             </label>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 8 }}>Como você quer pagar?</label>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 16 }}>
+              {([
+                { id: 'pix', titulo: 'PIX agora', desc: 'Garante na hora' },
+                { id: 'dinheiro', titulo: 'Dinheiro na barbearia', desc: 'Paga ao chegar' },
+              ] as const).map(opt => {
+                const sel = metodoPg === opt.id;
+                return (
+                  <button key={opt.id} onClick={() => setMetodoPg(opt.id)}
+                    style={{
+                      padding: '12px 10px', borderRadius: 10, textAlign: 'left', cursor: 'pointer',
+                      border: '1px solid', borderColor: sel ? 'var(--accent)' : 'var(--border)',
+                      background: sel ? 'color-mix(in srgb, var(--accent) 10%, transparent)' : 'var(--surface)',
+                    }}>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: sel ? 'var(--accent)' : 'var(--text)' }}>{opt.titulo}</p>
+                    <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>{opt.desc}</p>
+                  </button>
+                );
+              })}
+            </div>
+            {metodoPg === 'dinheiro' && (
+              <p style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 12, lineHeight: 1.5 }}>
+                O horário fica reservado. Pague em dinheiro direto com o barbeiro ao chegar. A política de falta continua valendo.
+              </p>
+            )}
             {error && <p style={{ color: 'var(--danger)', fontSize: 13, marginBottom: 10 }}>{error}</p>}
             <button className="btn btn-primary" style={{ width: '100%' }} disabled={!termos || loading} onClick={confirmar}>
-              {loading ? <><span className="spinner" />Confirmando...</> : 'Confirmar e pagar'}
+              {loading ? <><span className="spinner" />Confirmando...</> : metodoPg === 'dinheiro' ? 'Confirmar reserva' : 'Confirmar e pagar'}
             </button>
           </div>
         )}

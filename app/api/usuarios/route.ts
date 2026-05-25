@@ -129,6 +129,16 @@ export async function POST(req: NextRequest) {
       return res;
     }
 
+    if (action === 'apelido') {
+      // Staff (barbeiro+) define apelido global do cliente.
+      if (!canDo(session.role, 'ver_todos_ag')) return forbidden();
+      const alvo = await getUsuarioById(sanitizeString(body.usuario_id, 64));
+      if (!alvo) return notFound();
+      alvo.apelido = sanitizeString(body.apelido, 40) || null;
+      await updateUsuario(alvo);
+      return ok({ usuario: sanitizeUserOut(alvo, {}) });
+    }
+
     if (action === 'promover') {
       if (!canDo(session.role, 'promover')) {
         auditFromSession(session, 'admin_access_denied', { meta: { action: 'promover' }, ip, ua });

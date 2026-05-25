@@ -1,7 +1,7 @@
 import type {
   Usuario, Agendamento, BarbeiroDB, StoreConfig,
   MaintenanceConfig, FotoBarbeiro, UnidadeConfig, ServicoConfig,
-  PixTransaction, PixStatus,
+  PixTransaction, PixStatus, ReservaFila, PushSub,
 } from '@/types';
 
 // ─── Env (lazy + strict) ──────────────────────────────────────────────────────
@@ -20,6 +20,10 @@ const CH_CFG  = () => envOrThrow('DISCORD_CHANNEL_CONFIG');
 const CH_MAINT = () => process.env.DISCORD_CHANNEL_MANUTENCAO || CH_CFG();
 const CH_FOTO = () => process.env.DISCORD_CHANNEL_FOTOS_BARBEIROS || CH_BAR();
 const CH_PIX  = () => process.env.DISCORD_CHANNEL_PIX || CH_CFG();
+// Fila de reserva: reusa o canal de agendamentos por padrão (sem env nova).
+const CH_FILA = () => process.env.DISCORD_CHANNEL_FILA || CH_AGD();
+// Inscrições de push: canal próprio recomendado; cai no de config se não setado.
+const CH_PUSH = () => process.env.DISCORD_CHANNEL_PUSH || CH_CFG();
 
 const BASE = 'https://discord.com/api/v10';
 const DISCORD_MSG_LIMIT = 1900;
@@ -302,6 +306,67 @@ export async function updateAgendamento(ag: Agendamento): Promise<void> {
   if (!ag._messageId) throw new Error('Missing _messageId');
   const { _messageId, ...data } = ag;
   await edit(CH_AGD(), _messageId, JSON.stringify(data));
+}
+
+// ─── Reservas de fila ─────────────────────────────────────────────────────────
+// Guardadas no mesmo canal de agendamentos, com marcador __type. parseAg ignora
+// mensagens com __type, então as duas coleções coexistem sem conflito.
+
+function parseReserva(m: DMsg): ReservaFila | null {
+  try {
+    const d = JSON.parse(m.content);
+    if (d.__type !== 'reserva_fila') return null;
+    const { __type, ...rest } = d;
+    return { ...rest, _messageId: m.id };
+  } catch { return null; }
+}
+
+export async function getAllReservas(): Promise<ReservaFila[]> {
+  return (await fetchAll(CH_FILA())).map(parseReserva).filter(Boolean) as ReservaFila[];
+}
+export const getReservaBySlot = async (barbeiroId: string, data: string, horario: string) =>
+  (await getAllReservas()).find(r => r.barbeiro_id === barbeiroId && r.data === data && r.horario === horario) ?? null;
+export const getReservasByUsuario = async (id: string) =>
+  (await getAllReservas()).filter(r => r.usuario_id === id);
+
+export async function createReserva(r: Omit<ReservaFila, '_messageId'>): Promise<ReservaFila> {
+  const msg = await post(CH_FILA(), JSON.stringify({ __type: 'reserva_fila', ...r }));
+  return { ...r, _messageId: msg.id };
+}
+export async function deleteReserva(msgId: string): Promise<void> {
+  await del(CH_FILA(), msgId);
+}
+
+// ─── Push subscriptions ───────────────────────────────────────────────────────
+
+function parsePushSub(m: DMsg): PushSub | null {
+  try {
+    const d = JSON.parse(m.content);
+    if (d.__type !== 'push_sub') return null;
+    const { __type, ...rest } = d;
+    return { ...rest, _messageId: m.id };
+  } catch { return null; }
+}
+
+export async function getAllPushSubs(): Promise<PushSub[]> {
+  return (await fetchAll(CH_PUSH())).map(parsePushSub).filter(Boolean) as PushSub[];
+}
+export const getPushSubsByUsuario = async (id: string) =>
+  (await getAllPushSubs()).filter(s => s.usuario_id === id);
+
+export async function savePushSub(sub: Omit<PushSub, '_messageId'>): Promise<PushSub> {
+  const all = await getAllPushSubs();
+  const existing = all.find(s => s.endpoint === sub.endpoint);
+  if (existing) return existing; // já inscrito neste navegador
+  const msg = await post(CH_PUSH(), JSON.stringify({ __type: 'push_sub', ...sub }));
+  return { ...sub, _messageId: msg.id };
+}
+export async function deletePushSub(msgId: string): Promise<void> {
+  await del(CH_PUSH(), msgId);
+}
+export async function deletePushSubByEndpoint(endpoint: string): Promise<void> {
+  const s = (await getAllPushSubs()).find(x => x.endpoint === endpoint);
+  if (s?._messageId) await del(CH_PUSH(), s._messageId);
 }
 
 // ─── Barbeiros ────────────────────────────────────────────────────────────────

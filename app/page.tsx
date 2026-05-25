@@ -49,7 +49,7 @@ export default function App() {
     </div>
   );
 
-  const { session, usuario, agendamentos, adminAgs, barbeiros, stats, storeConfig, refresh, logout } = app;
+  const { session, usuario, agendamentos, adminAgs, clientes, barbeiros, stats, storeConfig, refresh, logout } = app;
 
   const tabs = getTabsForRole(session.role);
   const activeTab = tabs.includes(tab) ? tab : tabs[0];
@@ -92,7 +92,7 @@ export default function App() {
         )}
         {activeTab === 'horarios' && (
           <HorariosTab session={session} usuario={usuario} barbeiros={barbeiros}
-            agendamentos={adminAgs} storeConfig={storeConfig} onRefresh={refresh} />
+            agendamentos={adminAgs} clientes={clientes} storeConfig={storeConfig} onRefresh={refresh} />
         )}
         {activeTab === 'perfil' && (
           <PerfilBarbeiroTab session={session} usuario={usuario}

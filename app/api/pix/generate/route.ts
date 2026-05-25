@@ -6,8 +6,9 @@ import { clientIp } from '@/lib/security';
 import { generatePix } from '@/lib/sigilo';
 import {
   getAgendamentoById, getUsuarioById, updateAgendamento,
-  createPixTransaction,
+  createPixTransaction, getStoreConfig, getBarbeiroById,
 } from '@/lib/discord';
+import { pushToDonos } from '@/lib/push';
 import { sanitizeString } from '@/validators';
 import type { PixPurpose } from '@/types';
 
@@ -79,6 +80,19 @@ export async function POST(req: NextRequest) {
         meta: { entity: 'pix_tx', op: 'generate', purpose, ag_id: ag.id, amount: pix.amount, tx: pix.transactionId },
         ip, ua,
       });
+
+      // Push best-effort: avisa o dono que saiu um PIX (possível venda chegando).
+      try {
+        const cfg = await getStoreConfig();
+        const bNome = (await getBarbeiroById(ag.barbeiro_id))?.nome ?? 'barbeiro';
+        const cNome = usuario.nome?.split(' ')[0] ?? 'cliente';
+        const dt = (() => { try { return new Date(`${ag.data}T12:00`).toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: 'short' }); } catch { return ag.data; } })();
+        await pushToDonos({
+          title: `💸 PIX gerado — ${cfg.nome_loja}`,
+          body: `${cNome} vai pagar R$ ${pix.amount.toFixed(2)} · ${ag.servico} com ${bNome}, ${dt} às ${ag.horario}. Aguardando confirmação.`,
+          tag: `pix-${ag.id}`,
+        });
+      } catch { /* push opcional */ }
 
       return ok({
         transactionId: pix.transactionId,

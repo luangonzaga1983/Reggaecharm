@@ -1,11 +1,12 @@
 'use client';
 import { useState, useEffect } from 'react';
 import type { Session, Usuario, Agendamento, BarbeiroDB, StoreConfig, BarbeiroStats } from '@/types';
-import { ROLE_LABEL, ROLE_COLOR, STATUS_BADGE, formatDate, getUnidadeStatus } from '@/utils';
+import { ROLE_LABEL, ROLE_COLOR, STATUS_BADGE, formatDate, getUnidadeStatus, LEMBRETE_CORTE_DIAS } from '@/utils';
 import Avatar from '@/components/ui/Avatar';
 import Stars from '@/components/ui/Stars';
 import Tilt from '@/components/ui/Tilt';
 import PaymentModal from '@/components/modals/PaymentModal';
+import ReagendarModal from '@/components/modals/ReagendarModal';
 
 interface Props {
   session: Session; usuario: Usuario | null; stats: BarbeiroStats[];
@@ -24,6 +25,7 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
   const [mostrarTodos, setMostrarTodos] = useState(false);
   const [payAgId, setPayAgId]           = useState<string | null>(null);
   const [payFine, setPayFine]           = useState(false);
+  const [reagendarAg, setReagendarAg]   = useState<Agendamento | null>(null);
   const multa = Number(usuario?.multa_pendente ?? 0);
 
   useEffect(() => {
@@ -45,6 +47,11 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
 
   const hoje      = new Date().toISOString().split('T')[0];
   const proximos  = agendamentos.filter(a => a.data >= hoje && a.status !== 'cancelado');
+  // "Tá na hora de cortar": dias desde o último corte concluído, sem agendamento futuro.
+  const ultimoCorte    = agendamentos.filter(a => a.presenca === 'compareceu').map(a => a.data).sort().pop();
+  const temProximo     = agendamentos.some(a => a.data >= hoje && a.status !== 'cancelado');
+  const diasSemCortar  = ultimoCorte ? Math.floor((Date.now() - new Date(ultimoCorte + 'T12:00').getTime()) / 86400000) : null;
+  const naHora         = session.role === 'cliente' && !temProximo && diasSemCortar !== null && diasSemCortar >= LEMBRETE_CORTE_DIAS;
   const passados  = agendamentos.filter(a => a.data < hoje || a.status === 'cancelado');
   const hoje_ag   = agendamentos.find(a => a.data === hoje && a.status !== 'cancelado');
   const getB      = (id: string) => barbeiros.find(b => b.id === id);
@@ -74,6 +81,23 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
           onClose={() => setPayAgId(null)}
           onPaid={() => { setPayAgId(null); onRefresh(); }}
         />
+      )}
+      {reagendarAg && (
+        <ReagendarModal agendamento={reagendarAg} onClose={() => setReagendarAg(null)} onDone={onRefresh} />
+      )}
+
+      {naHora && (
+        <div className="card anim-up" style={{
+          marginBottom: 18, padding: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+          background: 'color-mix(in srgb, var(--accent) 8%, transparent)',
+          borderColor: 'color-mix(in srgb, var(--accent) 35%, transparent)',
+        }}>
+          <div>
+            <p style={{ fontSize: 12, color: 'var(--accent)', fontWeight: 700, marginBottom: 4 }}>Tá na hora de cortar ✂️</p>
+            <p style={{ fontSize: 13, color: 'var(--text)' }}>Faz <strong>{diasSemCortar} dias</strong> do seu último corte. Bora agendar?</p>
+          </div>
+          <button className="btn btn-primary" onClick={() => multa > 0 ? setPayFine(true) : onAgendar()}>Agendar</button>
+        </div>
       )}
 
       {multa > 0 && (
@@ -222,8 +246,9 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
                           <Avatar src={b?.photo_url} nome={b?.nome || '?'} size={28} />
                           <p style={{ fontWeight: 600, fontSize: 13 }}>{b?.nome}</p>
                           <span className={`badge ${STATUS_BADGE[a.status] || 'badge-gray'}`}>{a.status}</span>
-                          {a.pago && <span className="badge badge-green">pago</span>}
-                          {!a.pago && <span className="badge badge-yellow">aguardando pagto</span>}
+                          {a.pago ? <span className="badge badge-green">pago</span>
+                            : a.pagamento_metodo === 'dinheiro' ? <span className="badge badge-gray">pagar na barbearia</span>
+                            : <span className="badge badge-yellow">aguardando pagto</span>}
                         </div>
                         <p style={{ fontSize: 13, color: 'var(--text-dim)' }}>{a.servico}</p>
                         <p className="text-mono" style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>
@@ -233,8 +258,11 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
                       <div style={{ textAlign: 'right' }}>
                         <p style={{ fontWeight: 700, fontSize: 15 }}>R$ {a.valor}</p>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginTop: 6 }}>
-                          {!a.pago && a.status !== 'cancelado' && (
+                          {!a.pago && a.status !== 'cancelado' && a.pagamento_metodo !== 'dinheiro' && (
                             <button className="btn btn-primary" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => setPayAgId(a.id)}>Pagar agora</button>
+                          )}
+                          {a.status !== 'cancelado' && (a.presenca ?? 'pendente') === 'pendente' && a.data >= hoje && (
+                            <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => setReagendarAg(a)}>Reagendar</button>
                           )}
                           {a.status === 'pendente' && a.data >= hoje && (
                             <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => cancelar(a.id)}>Cancelar</button>

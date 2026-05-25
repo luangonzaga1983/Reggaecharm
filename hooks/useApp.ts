@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect, useCallback } from 'react';
-import type { Session, Usuario, Agendamento, BarbeiroDB, StoreConfig, BarbeiroStats, UserRole } from '@/types';
+import type { Session, Usuario, Agendamento, BarbeiroDB, StoreConfig, BarbeiroStats, UserRole, ClienteResumo } from '@/types';
 import { canDo } from '@/utils';
 
 interface AppState {
@@ -8,6 +8,7 @@ interface AppState {
   usuario: Usuario | null;
   agendamentos: Agendamento[];
   adminAgs: Agendamento[];
+  clientes: Record<string, ClienteResumo>;
   barbeiros: BarbeiroDB[];
   stats: BarbeiroStats[];
   storeConfig: StoreConfig | null;
@@ -17,7 +18,7 @@ interface AppState {
 }
 
 const INIT: AppState = {
-  session: null, usuario: null, agendamentos: [], adminAgs: [],
+  session: null, usuario: null, agendamentos: [], adminAgs: [], clientes: {},
   barbeiros: [], stats: [], storeConfig: null,
   loading: true, maintenanceMsg: null, authed: false,
 };
@@ -56,6 +57,7 @@ export function useApp() {
       barbeiros:    barbData?.barbeiros   ?? [],
       storeConfig:  cfgData?.config       ?? null,
       adminAgs:     [],
+      clientes:     {},
       loading:      false,
       maintenanceMsg: null,
     });
@@ -66,7 +68,7 @@ export function useApp() {
     const res = await fetch('/api/agendamentos?action=admin');
     if (res.ok) {
       const d = await res.json();
-      setState(s => ({ ...s, adminAgs: d.agendamentos ?? [] }));
+      setState(s => ({ ...s, adminAgs: d.agendamentos ?? [], clientes: d.clientes ?? {} }));
     }
   }, []);
 

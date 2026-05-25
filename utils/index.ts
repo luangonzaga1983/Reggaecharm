@@ -2,6 +2,12 @@ import type { UnidadeConfig, UserRole, AppTab, BarbeiroDB } from '@/types';
 
 export const DIAS_NOMES = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
+/** Mínimo de cortes concluídos (compareceu) para o cliente ser "FIEL". */
+export const FIEL_MIN = 10;
+
+/** Dias desde o último corte para sugerir "tá na hora de cortar" (1 semana + 3 dias). */
+export const LEMBRETE_CORTE_DIAS = 10;
+
 export const ROLE_LABEL: Record<UserRole, string> = {
   cliente: 'Cliente', barbeiro: 'Barbeiro', gerente: 'Gerente', dono: 'Dono',
 };
