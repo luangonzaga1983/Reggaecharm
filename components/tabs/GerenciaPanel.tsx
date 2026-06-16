@@ -428,7 +428,6 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
         </div>
       ) : activeTab === 'barbeiros' ? (
         <div>
-          <button className="btn btn-primary" style={{ width: '100%', marginBottom: 12 }} onClick={() => abrirFormBarbeiro(null)}>+ Novo barbeiro</button>
           {bFormOpen && (
             <div className="card" style={{ padding: 16, marginBottom: 12 }}>
               <p style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>{bEditId ? 'Editar' : 'Novo barbeiro'}</p>
