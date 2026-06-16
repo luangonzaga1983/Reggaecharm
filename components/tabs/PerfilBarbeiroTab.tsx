@@ -51,8 +51,9 @@ export default function PerfilBarbeiroTab({ usuario, agendamentos, onRefresh }: 
       const form = new FormData();
       form.append('barbeiro_id', barbeiro.id);
       form.append('foto', fotoFile);
-      await fetch('/api/barbeiros', { method: 'POST', body: form });
-      setFotoFile(null); await carregarBarbeiro(); onRefresh();
+      const res = await fetch('/api/barbeiros', { method: 'POST', body: form });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setUploadError(d.error || 'Falha ao enviar foto'); return; }
+      setUploadError(''); setFotoFile(null); await carregarBarbeiro(); onRefresh();
     } finally { setSavingFoto(false); }
   }
 
@@ -129,6 +130,7 @@ export default function PerfilBarbeiroTab({ usuario, agendamentos, onRefresh }: 
             </button>
           )}
         </div>
+        {uploadError && <p style={{ color: 'var(--danger)', fontSize: 12, marginTop: 6 }}>{uploadError}</p>}
       </div>
 
       <div className="card" style={{ padding: 16, marginBottom: 12 }}>
