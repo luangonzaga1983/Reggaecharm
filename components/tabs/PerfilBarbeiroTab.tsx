@@ -49,10 +49,11 @@ export default function PerfilBarbeiroTab({ usuario, agendamentos, onRefresh }: 
     if (!fotoFile || !barbeiro) return;
     setSavingFoto(true); setFotoPerfilErro('');
     try {
+      // A foto do barbeiro é a foto da própria CONTA (barbeiro = conta + cargo).
+      // Sobe pra /api/usuarios (foto do usuário logado) — é o sistema que funciona.
       const form = new FormData();
-      form.append('barbeiro_id', barbeiro.id);
       form.append('foto', fotoFile);
-      const res = await fetch('/api/barbeiros', { method: 'POST', body: form });
+      const res = await fetch('/api/usuarios', { method: 'POST', body: form });
       if (!res.ok) {
         const d = await res.json().catch(() => ({}));
         setFotoPerfilErro(d.error || 'Não foi possível enviar a foto. Tente outra imagem (JPG/PNG, até 8MB).');
@@ -127,7 +128,7 @@ export default function PerfilBarbeiroTab({ usuario, agendamentos, onRefresh }: 
             </div>
           </div>
         </div>
-        <p style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Foto de capa</p>
+        <p style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Foto de perfil</p>
         <input ref={fotoPerfilRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) { setFotoFile(f); setFotoPreview(URL.createObjectURL(f)); } }} />
         <div style={{ display: 'flex', gap: 6 }}>
           <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => fotoPerfilRef.current?.click()}>{barbeiro.photo_url ? 'Trocar foto' : 'Adicionar foto'}</button>

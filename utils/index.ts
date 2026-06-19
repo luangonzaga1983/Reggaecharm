@@ -23,17 +23,63 @@ export const TEMA_COR_MAP: Record<string, string> = {
   red:    '#ff1744',
   purple: '#a78bfa',
   blue:   '#1f6feb',
+  reggae: '#2ea043', // base do modo reggae (verde); o tricolor é aplicado via CSS
   custom: '#00c853',
 };
 
+/** Gradiente das 3 cores do reggae (verde, amarelo, vermelho). */
+export const REGGAE_GRADIENT = 'linear-gradient(120deg, #2ea043 0%, #ffd60a 50%, #e23b3b 100%)';
+
+function hexToRgb(hex: string): [number, number, number] | null {
+  const m = /^#?([0-9a-fA-F]{6})$/.exec(hex.trim());
+  if (!m) return null;
+  const n = parseInt(m[1], 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+/** Preto ou branco — o que tiver mais contraste sobre `hex` (texto em botão). */
+function contrastOn(hex: string): string {
+  const rgb = hexToRgb(hex);
+  if (!rgb) return '#ffffff';
+  const lin = rgb.map(v => { const s = v / 255; return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4; });
+  const L = 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2];
+  return L > 0.45 ? '#18181b' : '#ffffff';
+}
+
 /**
- * No-op preservado por compatibilidade. O tema agora é monocromático
- * (claro/escuro) e controlado por `applyTheme`; a cor de destaque da loja
- * não altera mais a paleta global.
+ * Aplica a cor de destaque da loja sobrescrevendo as CSS vars de accent no
+ * <html> (inline → vence o tema claro/escuro e persiste ao alternar tema).
+ * - 'reggae': verde como accent + atributo data-reggae="on" (CSS pinta o tricolor
+ *   em botões primários, barra de progresso etc).
+ * - 'custom': usa tema_cor_custom (#RRGGBB).
+ * - demais: cor do TEMA_COR_MAP.
  */
-export function applyStoreTheme(_storeConfig?: { tema_cor?: string; tema_cor_custom?: string; modo_reggae?: boolean }) {
+export function applyStoreTheme(cfg?: { tema_cor?: string; tema_cor_custom?: string; modo_reggae?: boolean }) {
   if (typeof document === 'undefined') return;
-  document.body.classList.remove('rasta-mode');
+  const root = document.documentElement;
+  const clear = () => {
+    root.style.removeProperty('--accent');
+    root.style.removeProperty('--accent-contrast');
+    root.style.removeProperty('--accent-soft');
+    root.removeAttribute('data-reggae');
+  };
+  if (!cfg?.tema_cor) { clear(); return; }
+
+  const setAccent = (hex: string, contrast?: string) => {
+    const rgb = hexToRgb(hex);
+    if (!rgb) { clear(); return; }
+    root.style.setProperty('--accent', hex);
+    root.style.setProperty('--accent-contrast', contrast ?? contrastOn(hex));
+    root.style.setProperty('--accent-soft', `rgba(${rgb[0]}, ${rgb[1]}, ${rgb[2]}, 0.14)`);
+  };
+
+  if (cfg.tema_cor === 'reggae') {
+    setAccent('#2ea043', '#0b0b0c');
+    root.setAttribute('data-reggae', 'on');
+    return;
+  }
+  root.removeAttribute('data-reggae');
+  setAccent(cfg.tema_cor === 'custom' ? (cfg.tema_cor_custom || '#1f6feb') : (TEMA_COR_MAP[cfg.tema_cor] || '#1f6feb'));
 }
 
 export type Theme = 'dark' | 'light';

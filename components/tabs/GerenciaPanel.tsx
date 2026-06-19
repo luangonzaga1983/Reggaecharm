@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Session, Usuario, Agendamento, BarbeiroDB, StoreConfig, UserRole, FolgaBlock } from '@/types';
-import { ROLE_LABEL, ROLE_COLOR, ROLE_LEVEL, TEMA_COR_MAP, DIAS_NOMES, canDo, applyStoreTheme, gerarHorarios } from '@/utils';
+import { ROLE_LABEL, ROLE_COLOR, ROLE_LEVEL, TEMA_COR_MAP, REGGAE_GRADIENT, DIAS_NOMES, canDo, applyStoreTheme, gerarHorarios } from '@/utils';
 import { hojeSP } from '@/lib/datetime';
 import Avatar from '@/components/ui/Avatar';
 
@@ -139,6 +139,46 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
     );
   }
 
+  /** Controle de cargo (promover/rebaixar/demitir) reutilizável — usado na aba
+   *  Barbeiros para mudar o cargo da conta vinculada (ex.: Barbeiro → Cliente). */
+  function cargoBloco(uid: string, label = 'Mudar cargo') {
+    if (!canDo(session.role, 'promover') || uid === session.id) return null;
+    const aberto = promoTarget === uid;
+    return (
+      <>
+        <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }}
+          onClick={() => { setPromoTarget(aberto ? null : uid); setNovoRole('cliente'); setNovaUnidadeId(''); }}>
+          {aberto ? 'Cancelar' : label}
+        </button>
+        {aberto && (
+          <div className="card" style={{ padding: 12, marginTop: 8, background: 'var(--bg-elev)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div>
+              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Novo cargo</label>
+              <select className="input" value={novoRole} onChange={e => setNovoRole(e.target.value as UserRole)}>
+                {rolesDisponiveis.map(r => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}
+              </select>
+            </div>
+            {(novoRole === 'barbeiro' || novoRole === 'gerente') && (
+              <div>
+                <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Unidade</label>
+                <select className="input" value={novaUnidadeId} onChange={e => setNovaUnidadeId(e.target.value)}>
+                  <option value="">Nenhuma</option>
+                  {storeConfig.unidades.map(un => <option key={un.id} value={un.id}>{un.nome}</option>)}
+                </select>
+              </div>
+            )}
+            {novoRole === 'cliente' && (
+              <p style={{ fontSize: 11.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                Rebaixar para Cliente <strong>demite</strong>: remove o barbeiro da agenda e desvincula a conta. O histórico de cortes é mantido.
+              </p>
+            )}
+            <button className="btn btn-primary" onClick={() => promover(uid)} disabled={saving}>{saving ? 'Salvando...' : 'Confirmar cargo'}</button>
+          </div>
+        )}
+      </>
+    );
+  }
+
   const loadAdmin = useCallback(async () => {
     setLoading(true);
     const reqs: Promise<Response>[] = [
@@ -238,8 +278,13 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
       const res = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: bEditId, nome: bNome, especialidades: esp, unidades: bUnidades, almoco, folgas: bFolgas }) });
       if (!res.ok) { const d = await res.json().catch(() => ({})); setBError(d.error || 'Erro ao salvar'); setBSaving(false); return; }
       if (bFotoFile) {
-        const form = new FormData(); form.append('barbeiro_id', bEditId); form.append('foto', bFotoFile);
-        const fr = await fetch('/api/barbeiros', { method: 'POST', body: form });
+        // Foto do barbeiro = foto da CONTA vinculada. Dono sobe direto na conta
+        // (/api/usuarios). Sem conta vinculada (ou não-dono), cai no registro.
+        const linkedId = usuarios.find(x => x.barbeiro_id === bEditId)?.id;
+        const form = new FormData(); form.append('foto', bFotoFile);
+        let fr: Response;
+        if (linkedId && isDono) { form.append('usuario_id', linkedId); fr = await fetch('/api/usuarios', { method: 'POST', body: form }); }
+        else { form.append('barbeiro_id', bEditId); fr = await fetch('/api/barbeiros', { method: 'POST', body: form }); }
         if (!fr.ok) { const d = await fr.json().catch(() => ({})); setBError(d.error || 'Dados salvos, mas a foto falhou. Tente outra imagem (JPG/PNG, até 8MB).'); setBSaving(false); loadAdmin(); onRefresh(); return; }
       }
       // Sincroniza bidirecionalmente: adiciona o ID do barbeiro nas unidades selecionadas
@@ -532,16 +577,20 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {barbeiros.map(b => {
               const aberto = openBarber === b.id;
+              const linkedUser = usuarios.find(x => x.barbeiro_id === b.id);
               return (
               <div key={b.id} className="card" style={{ padding: 0, overflow: 'hidden' }}>
                 <button
                   onClick={() => setOpenBarber(aberto ? null : b.id)}
                   style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', cursor: 'pointer', padding: 12, display: 'flex', alignItems: 'center', gap: 12, font: 'inherit', color: 'inherit' }}
                 >
-                  <Avatar src={b.photo_url} nome={b.nome} size={42} />
+                  <Avatar src={b.photo_url} nome={b.nome} size={42} accent={linkedUser ? ROLE_COLOR[linkedUser.role] : 'var(--accent)'} />
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                       <span style={{ fontWeight: 500, fontSize: 14 }}>{b.nome}</span>
+                      {linkedUser
+                        ? <span className="badge" style={{ color: ROLE_COLOR[linkedUser.role], borderColor: 'currentColor', background: 'transparent' }}>{ROLE_LABEL[linkedUser.role]}</span>
+                        : <span className="badge badge-yellow">Sem conta</span>}
                       {!b.ativo && <span className="badge badge-red">Inativo</span>}
                     </div>
                     <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.unidades.map(uid => storeConfig.unidades.find(u => u.id === uid)?.bairro || uid).join(', ') || 'Sem unidade'}</p>
@@ -560,13 +609,14 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
                       <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }} onClick={async () => { if (!confirm(b.ativo ? 'Desativar barbeiro? (some da agenda, mas pode reativar)' : 'Reativar barbeiro?')) return; await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: b.id, ativo: !b.ativo }) }); loadAdmin(); onRefresh(); }}>{b.ativo ? 'Desativar' : 'Reativar'}</button>
                       <button className="btn btn-danger" style={{ padding: '6px 12px', fontSize: 12 }} onClick={async () => { if (!confirm(`Excluir PERMANENTEMENTE "${b.nome}"?\n\nApaga o barbeiro e a foto, e remove das unidades. Ação irreversível. O histórico de cortes é mantido.`)) return; const res = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'excluir', barbeiro_id: b.id }) }); if (!res.ok) { alert('Não foi possível excluir.'); return; } setOpenBarber(null); loadAdmin(); onRefresh(); }}>Excluir</button>
                     </div>
+                    {/* Cargo: rebaixar p/ Cliente = demitir (também promover a gerente etc) */}
+                    {canGerenciarContas && linkedUser && <div style={{ marginTop: 8 }}>{cargoBloco(linkedUser.id, 'Mudar cargo / Demitir')}</div>}
                     {/* Conta do barbeiro (usuário vinculado) — gerir email/senha/saldo/multa */}
-                    {canGerenciarContas && (() => {
-                      const linkedUser = usuarios.find(x => x.barbeiro_id === b.id);
-                      return linkedUser
+                    {canGerenciarContas && (
+                      linkedUser
                         ? gerenciarBloco(linkedUser)
-                        : <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>Barbeiro sem conta de login vinculada.</p>;
-                    })()}
+                        : <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>Barbeiro sem conta de login vinculada — não dá pra logar nem mudar cargo. Exclua e recrie promovendo um usuário.</p>
+                    )}
                   </div>
                 )}
               </div>
@@ -608,13 +658,13 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
               <div>
                 <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 8 }}>Cor de destaque</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {(['blue', 'green', 'yellow', 'red', 'purple'] as const).map(cor => (
+                  {(['blue', 'green', 'yellow', 'red', 'purple', 'reggae'] as const).map(cor => (
                     <button
                       key={cor}
                       className={`swatch ${storeConfig.tema_cor === cor ? 'active' : ''}`}
                       onClick={() => { setStoreConfig(p => ({ ...p, tema_cor: cor })); applyStoreTheme({ tema_cor: cor }); }}
-                      style={{ background: TEMA_COR_MAP[cor] }}
-                      title={cor}
+                      style={{ background: cor === 'reggae' ? REGGAE_GRADIENT : TEMA_COR_MAP[cor] }}
+                      title={cor === 'reggae' ? 'Reggae (verde/amarelo/vermelho)' : cor}
                     />
                   ))}
                   <button

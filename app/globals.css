@@ -168,6 +168,25 @@ body {
 .btn-accent:hover:not(:disabled),
 .btn-green:hover:not(:disabled) { opacity: 0.88; }
 
+/* ── Modo Reggae: tricolor (verde/amarelo/vermelho) nos destaques principais ── */
+html[data-reggae='on'] .btn-primary,
+html[data-reggae='on'] .btn-accent,
+html[data-reggae='on'] .btn-green {
+  background-image: linear-gradient(120deg, #2ea043 0%, #ffd60a 50%, #e23b3b 100%);
+  color: #0b0b0c;
+  border-color: transparent;
+}
+html[data-reggae='on'] .progress-fill,
+html[data-reggae='on'] .pulse-glow {
+  background-image: linear-gradient(120deg, #2ea043 0%, #ffd60a 50%, #e23b3b 100%);
+}
+/* Faixa tricolor fininha no topo da página (assinatura reggae). */
+html[data-reggae='on'] body::before {
+  content: '';
+  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000;
+  background: linear-gradient(90deg, #2ea043 0%, #2ea043 33%, #ffd60a 33%, #ffd60a 66%, #e23b3b 66%, #e23b3b 100%);
+}
+
 .btn-outline {
   background: var(--surface);
   color: var(--text);

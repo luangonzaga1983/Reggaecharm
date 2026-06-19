@@ -25,10 +25,23 @@ export async function GET(req: NextRequest) {
   const url = await resolveAttachmentUrl(scope, msgId);
   if (!url) return new NextResponse(null, { status: 404 });
 
-  // 302 para a URL assinada atual. Cache curto no browser/CDN: evita reabrir a
-  // mensagem no Discord a cada avatar, mas expira bem antes da assinatura (~24h).
-  return NextResponse.redirect(url, {
-    status: 302,
-    headers: { 'Cache-Control': 'public, max-age=600, stale-while-revalidate=86400' },
-  });
+  // Faz STREAM dos bytes (em vez de redirecionar pro CDN do Discord). Assim a
+  // imagem é servida do NOSSO domínio: imune a adblock/extensões que bloqueiam
+  // *.discordapp.com, a CSP, a CORP e a hotlink-protection do Discord. É o que
+  // garante a foto aparecer em qualquer navegador.
+  try {
+    const upstream = await fetch(url, { cache: 'no-store' });
+    if (!upstream.ok || !upstream.body) return new NextResponse(null, { status: 404 });
+    const ct = upstream.headers.get('content-type') || 'image/jpeg';
+    if (!ct.startsWith('image/')) return new NextResponse(null, { status: 415 });
+    return new NextResponse(upstream.body, {
+      status: 200,
+      headers: {
+        'Content-Type': ct,
+        'Cache-Control': 'public, max-age=600, stale-while-revalidate=86400',
+      },
+    });
+  } catch {
+    return new NextResponse(null, { status: 502 });
+  }
 }

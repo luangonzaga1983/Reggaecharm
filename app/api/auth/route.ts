@@ -49,8 +49,9 @@ export async function POST(req: NextRequest) {
         return err('Essa senha já apareceu em vazamentos de dados. Escolha uma senha diferente.', 400);
       }
 
-      // Mensagem genérica anti-enumeração (não revela se e-mail já existe)
-      const existing = await getUsuarioByEmail(email);
+      // Mensagem genérica anti-enumeração (não revela se e-mail já existe).
+      // `fresh`: leitura sem cache — não bloqueia e-mail de conta recém-excluída.
+      const existing = await getUsuarioByEmail(email, { fresh: true });
       if (existing) {
         audit({
           ts: '', actor_id: null, actor_role: null, action: 'register',

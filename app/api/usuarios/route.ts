@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import {
-  getUsuarioById, updateUsuario, deleteUsuario, getAllUsuarios,
+  getUsuarioById, updateUsuario, purgeUsuario, getAllUsuarios,
   getUsuarioByUsername, getUsuarioByEmail, uploadUserPhoto, banirUsuario, desbanirUsuario,
   createBarbeiro, getBarbeiroById, updateBarbeiro,
 } from '@/lib/discord';
@@ -137,7 +137,7 @@ export async function POST(req: NextRequest) {
         if (donos.length <= 1) return err('Você é o único dono. Promova outro usuário antes de excluir sua conta.');
       }
       if (!u._messageId) return notFound();
-      await deleteUsuario(u._messageId);
+      await purgeUsuario({ id: u.id, email: u.email }); // apaga conta + duplicatas (libera o e-mail)
       auditFromSession(session, 'delete_user', { target_id: u.id, target_label: u.email, ip, ua });
       const res = ok();
       res.cookies.set(COOKIE_NAME, '', { ...cookieOptions(), maxAge: 0 });
@@ -279,9 +279,13 @@ export async function POST(req: NextRequest) {
       if (body.email !== undefined) {
         const e = validateEmail(body.email);
         if (!e) return err('E-mail inválido');
-        const taken = await getUsuarioByEmail(e);
-        if (taken && taken.id !== alvo.id) return err('E-mail já está em uso', 409);
-        alvo.email = e; campos.push('email');
+        // Só checa unicidade se o e-mail REALMENTE mudou — senão salvar a conta sem
+        // mexer no e-mail acusava "já está em uso" (a própria conta / duplicata).
+        if (e !== alvo.email) {
+          const taken = await getUsuarioByEmail(e, { fresh: true });
+          if (taken && taken.id !== alvo.id) return err('E-mail já está em uso', 409);
+          alvo.email = e; campos.push('email');
+        }
       }
       if (body.username !== undefined) {
         const clean = validateUsername(body.username);
@@ -346,7 +350,7 @@ export async function POST(req: NextRequest) {
       if (session.role !== 'dono' && ROLE_LEVEL[alvo.role] >= ROLE_LEVEL[session.role]) return forbidden();
       if (!alvo._messageId) return notFound();
 
-      await deleteUsuario(alvo._messageId);
+      await purgeUsuario({ id: alvo.id, email: alvo.email }); // conta + duplicatas
       auditFromSession(session, 'delete_user', {
         target_id: alvo.id, target_label: alvo.email,
         meta: { by: 'admin', alvo_role: alvo.role }, ip, ua,

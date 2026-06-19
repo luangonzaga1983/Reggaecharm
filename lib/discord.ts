@@ -293,10 +293,11 @@ function parseUser(m: DMsg): Usuario | null {
   } catch { return null; }
 }
 
-export async function getAllUsuarios(): Promise<Usuario[]> {
-  return (await fetchAll(CH_USR())).map(parseUser).filter(Boolean) as Usuario[];
+export async function getAllUsuarios(opts: { fresh?: boolean } = {}): Promise<Usuario[]> {
+  return (await fetchAll(CH_USR(), opts)).map(parseUser).filter(Boolean) as Usuario[];
 }
-export const getUsuarioByEmail    = async (email: string)    => (await getAllUsuarios()).find(u => u.email === email.toLowerCase()) ?? null;
+// `fresh` força leitura sem cache — usado no cadastro p/ não bloquear e-mail recém-liberado.
+export const getUsuarioByEmail    = async (email: string, opts?: { fresh?: boolean }) => (await getAllUsuarios(opts)).find(u => u.email === email.toLowerCase()) ?? null;
 export const getUsuarioByUsername = async (username: string) => (await getAllUsuarios()).find(u => u.username?.toLowerCase() === username.toLowerCase()) ?? null;
 export const getUsuarioById       = async (id: string)       => (await getAllUsuarios()).find(u => u.id === id) ?? null;
 
@@ -324,6 +325,25 @@ export async function uploadUserPhoto(u: Usuario, buffer: ArrayBuffer, filename:
 
 export async function deleteUsuario(msgId: string): Promise<void> {
   await del(CH_USR(), msgId);
+}
+
+/**
+ * Exclusão COMPLETA do usuário: apaga TODAS as mensagens com o mesmo id OU e-mail.
+ * Limpa duplicatas (de deletes silenciosos antigos) que, se ficassem, manteriam o
+ * e-mail "em uso" mesmo após excluir a conta. Retorna quantas mensagens removeu.
+ */
+export async function purgeUsuario(opts: { id?: string; email?: string | null }): Promise<number> {
+  const email = opts.email?.toLowerCase();
+  const msgs = await fetchAll(CH_USR(), { fresh: true });
+  let n = 0;
+  for (const m of msgs) {
+    const u = parseUser(m);
+    if (!u) continue;
+    if ((opts.id && u.id === opts.id) || (email && u.email?.toLowerCase() === email)) {
+      if (m.id) { await del(CH_USR(), m.id); n++; }
+    }
+  }
+  return n;
 }
 
 export async function banirUsuario(u: Usuario, motivo: string, ip?: string): Promise<void> {
@@ -475,7 +495,14 @@ function parseBar(m: DMsg): BarbeiroDB | null {
 }
 
 export async function getAllBarbeiros(): Promise<BarbeiroDB[]> {
-  return (await fetchAll(CH_BAR())).map(parseBar).filter(Boolean) as BarbeiroDB[];
+  const [msgs, users] = await Promise.all([fetchAll(CH_BAR()), getAllUsuarios()]);
+  const barbs = msgs.map(parseBar).filter(Boolean) as BarbeiroDB[];
+  // Foto do barbeiro = foto da CONTA vinculada (o mesmo sistema que já funciona em
+  // "Gerenciar conta"). Barbeiro é conta+cargo, então a foto é a do usuário; cai
+  // pra foto do próprio registro só se a conta não tiver nenhuma.
+  const fotoDaConta = new Map<string, string>();
+  for (const u of users) if (u.barbeiro_id && u.foto_url) fotoDaConta.set(u.barbeiro_id, u.foto_url);
+  return barbs.map(b => ({ ...b, photo_url: fotoDaConta.get(b.id) ?? b.photo_url }));
 }
 export const getBarbeiroById = async (id: string) => (await getAllBarbeiros()).find(b => b.id === id) ?? null;
 
