@@ -30,6 +30,7 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
   const [gerForm, setGerForm]       = useState({ nome: '', email: '', username: '', senha: '', saldo: '', multa: '' });
   const [gerSaving, setGerSaving]   = useState(false);
   const [gerMsg, setGerMsg]         = useState('');
+  const gerFotoRef = useRef<HTMLInputElement>(null);
   const [maintenance, setMaintenance] = useState<{ ativo: boolean; mensagem: string; _messageId?: string } | null>(null);
   const [maintSaving, setMaintSaving] = useState(false);
   const [maintSaved, setMaintSaved]   = useState(false);
@@ -89,10 +90,8 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
             {isDono && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <Avatar src={u.foto_url} nome={u.nome} size={48} />
-                <label className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>
-                  Trocar foto
-                  <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadFotoUser(u.id, f); e.target.value = ''; }} />
-                </label>
+                <input ref={gerFotoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) uploadFotoUser(u.id, f); }} />
+                <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }} onClick={() => gerFotoRef.current?.click()}>Trocar foto</button>
               </div>
             )}
             <div>
@@ -235,12 +234,12 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
       if (almoco && almoco.inicio >= almoco.fim) { setBError('Almoço: início deve ser antes do fim'); setBSaving(false); return; }
       if (bEditId) {
         await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: bEditId, nome: bNome, especialidades: esp, unidades: bUnidades, almoco, folgas: bFolgas }) });
-        if (bFotoFile) { const form = new FormData(); form.append('barbeiro_id', bEditId); form.append('foto', bFotoFile); const fr = await fetch('/api/barbeiros', { method: 'POST', body: form }); if (!fr.ok) { const d = await fr.json().catch(() => ({})); setBError(d.error || 'Falha ao enviar foto'); setBSaving(false); return; } }
+        if (bFotoFile) { const form = new FormData(); form.append('barbeiro_id', bEditId); form.append('foto', bFotoFile); await fetch('/api/barbeiros', { method: 'POST', body: form }); }
       } else {
         const res = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'criar', nome: bNome, especialidades: esp, unidades: bUnidades }) });
         const d = await res.json();
         if (d.barbeiro?.id) {
-          if (bFotoFile) { const form = new FormData(); form.append('barbeiro_id', d.barbeiro.id); form.append('foto', bFotoFile); const fr = await fetch('/api/barbeiros', { method: 'POST', body: form }); if (!fr.ok) { const e = await fr.json().catch(() => ({})); setBError(e.error || 'Falha ao enviar foto'); setBSaving(false); return; } }
+          if (bFotoFile) { const form = new FormData(); form.append('barbeiro_id', d.barbeiro.id); form.append('foto', bFotoFile); await fetch('/api/barbeiros', { method: 'POST', body: form }); }
           if (almoco || bFolgas.length) await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: d.barbeiro.id, almoco, folgas: bFolgas }) });
         }
       }
@@ -429,6 +428,7 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
         </div>
       ) : activeTab === 'barbeiros' ? (
         <div>
+          <button className="btn btn-primary" style={{ width: '100%', marginBottom: 12 }} onClick={() => abrirFormBarbeiro(null)}>+ Novo barbeiro</button>
           {bFormOpen && (
             <div className="card" style={{ padding: 16, marginBottom: 12 }}>
               <p style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>{bEditId ? 'Editar' : 'Novo barbeiro'}</p>

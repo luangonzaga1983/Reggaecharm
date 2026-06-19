@@ -56,7 +56,8 @@ export async function POST(req: NextRequest) {
           ts: '', actor_id: null, actor_role: null, action: 'register',
           meta: { result: 'email_taken', email_hash: hashEmail(email) }, ip, ua,
         });
-        return err('Este e-mail já está cadastrado. Faça login.', 409);
+        // 200 OK genérico — não confirma nem nega existência ao atacante
+        return err('Não foi possível concluir o cadastro. Verifique seus dados ou tente fazer login.', 400);
       }
 
       const device_hash = sanitizeString(body.device_hash, 128) || null;

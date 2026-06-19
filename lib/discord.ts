@@ -291,11 +291,9 @@ export async function updateUsuario(u: Usuario): Promise<void> {
 }
 
 export async function uploadUserPhoto(u: Usuario, buffer: ArrayBuffer, filename: string, mime: string): Promise<string> {
-  // Sobe o novo PRIMEIRO; só depois apaga o antigo. Se o upload falhar, o registro
-  // original continua intacto (antes: deletava antes → falha = usuário perdido).
+  if (u._messageId) await del(CH_USR(), u._messageId);
   const { _messageId, foto_url, ...data } = u;
   const msg = await uploadFile(CH_USR(), JSON.stringify(data), buffer, filename, mime);
-  if (_messageId) await del(CH_USR(), _messageId);
   return msg.attachments?.[0]?.url ?? '';
 }
 
@@ -468,11 +466,9 @@ export async function updateBarbeiro(b: BarbeiroDB): Promise<void> {
 }
 
 export async function uploadBarberPhoto(b: BarbeiroDB, buffer: ArrayBuffer, filename: string, mime: string): Promise<string> {
-  // Sobe o novo PRIMEIRO; só depois apaga o antigo. Se o upload falhar, o barbeiro
-  // continua intacto (antes: deletava antes → falha = barbeiro perdido).
+  if (b._messageId) await del(CH_BAR(), b._messageId);
   const { _messageId, photo_url, ...data } = b;
   const msg = await uploadFile(CH_BAR(), JSON.stringify({ ...data, photo_message_id: null }), buffer, filename, mime);
-  if (_messageId) await del(CH_BAR(), _messageId);
   return msg.attachments?.[0]?.url ?? '';
 }
 
