@@ -31,13 +31,17 @@ export async function GET(req: NextRequest) {
   // garante a foto aparecer em qualquer navegador.
   try {
     const upstream = await fetch(url, { cache: 'no-store' });
-    if (!upstream.ok || !upstream.body) return new NextResponse(null, { status: 404 });
+    if (!upstream.ok) return new NextResponse(null, { status: 404 });
     const ct = upstream.headers.get('content-type') || 'image/jpeg';
     if (!ct.startsWith('image/')) return new NextResponse(null, { status: 415 });
-    return new NextResponse(upstream.body, {
+    // Lê os bytes e devolve a imagem inteira (não stream) — máxima compatibilidade
+    // com a borda da Vercel. A imagem sai do nosso domínio, imune a adblock/CSP.
+    const bytes = await upstream.arrayBuffer();
+    return new NextResponse(bytes, {
       status: 200,
       headers: {
         'Content-Type': ct,
+        'Content-Length': String(bytes.byteLength),
         'Cache-Control': 'public, max-age=600, stale-while-revalidate=86400',
       },
     });

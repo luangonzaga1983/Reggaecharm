@@ -55,6 +55,15 @@ export interface Usuario {
   _messageId?: string;
 }
 
+/** Avaliação direta de um barbeiro (1 por usuário, global). Define o ranking. */
+export interface AvalBarbeiro {
+  barbeiro_id: string;
+  usuario_id: string;
+  estrelas: number;
+  updated_at: string;
+  _messageId?: string;
+}
+
 /** Inscrição de Web Push (1 por dispositivo/navegador). */
 export interface PushSub {
   id: string;

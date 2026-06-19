@@ -148,7 +148,7 @@ export default function App() {
       </nav>
 
       {agendarOpen && (
-        <AgendarModal session={session} stats={stats} barbeiros={barbeiros}
+        <AgendarModal session={session} usuario={usuario} stats={stats} barbeiros={barbeiros}
           storeConfig={storeConfig} onClose={() => setAgendarOpen(false)} onSuccess={refresh} />
       )}
       {perfilAberto && (

@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { BarbeiroDB, Agendamento, FotoBarbeiro } from '@/types';
 import Avatar from '@/components/ui/Avatar';
+import Stars from '@/components/ui/Stars';
 
 interface Props {
   barbeiro: BarbeiroDB; agendamentos: Agendamento[];
@@ -21,8 +22,21 @@ export default function PerfilBarbeiroModal({ barbeiro, agendamentos, onClose, i
   const [abaAtiva, setAbaAtiva]         = useState<'fotos' | 'cortes'>('fotos');
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const avs = agendamentos.filter(a => a.barbeiro_id === barbeiro.id && a.avaliacao);
-  const mediaEstrelas = avs.length ? avs.reduce((s, a) => s + (a.avaliacao || 0), 0) / avs.length : 0;
+  // Avaliação global do barbeiro (1 nota por usuário) — define o ranking.
+  const [aval, setAval] = useState<{ media: number; total: number; minha: number | null }>({ media: 0, total: 0, minha: null });
+  const [avalSaving, setAvalSaving] = useState(false);
+  const carregarAval = useCallback(async () => {
+    try { const r = await fetch(`/api/barbeiros?aval=${encodeURIComponent(barbeiro.id)}`); if (r.ok) setAval(await r.json()); } catch { /* ignore */ }
+  }, [barbeiro.id]);
+  useEffect(() => { carregarAval(); }, [carregarAval]);
+  async function avaliar(estrelas: number) {
+    setAvalSaving(true);
+    try {
+      const r = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'avaliar', barbeiro_id: barbeiro.id, estrelas }) });
+      if (r.ok) { const d = await r.json(); setAval({ media: d.media, total: d.total, minha: d.minha }); }
+    } finally { setAvalSaving(false); }
+  }
+
   const totalCortes = agendamentos.filter(a => a.barbeiro_id === barbeiro.id && a.status === 'confirmado').length;
 
   const carregarFotos = useCallback(async () => {
@@ -79,7 +93,7 @@ export default function PerfilBarbeiroModal({ barbeiro, agendamentos, onClose, i
               <p style={{ fontWeight: 600, fontSize: 15 }}>{barbeiro.nome}</p>
               <p style={{ fontSize: 12, color: 'var(--text-dim)', marginBottom: 6 }}>Barbeiro profissional</p>
               <div style={{ display: 'flex', gap: 16, marginBottom: 6 }}>
-                {[['fotos', fotos.length], ...(isProprietario ? [['cortes', totalCortes]] : []), ['★ média', mediaEstrelas ? mediaEstrelas.toFixed(1) : '—']].map(([l, v]) => (
+                {[['fotos', fotos.length], ...(isProprietario ? [['cortes', totalCortes]] : []), ['★ média', aval.media ? `${aval.media.toFixed(1)} (${aval.total})` : '—']].map(([l, v]) => (
                   <div key={l as string} style={{ textAlign: 'center' }}>
                     <p style={{ fontWeight: 600, fontSize: 13, lineHeight: 1 }}>{v}</p>
                     <p style={{ fontSize: 11, color: 'var(--text-faint)' }}>{l}</p>
@@ -91,6 +105,19 @@ export default function PerfilBarbeiroModal({ barbeiro, agendamentos, onClose, i
               </div>
             </div>
           </div>
+
+          {/* Avaliação do barbeiro: 1 nota por usuário (define o ranking global) */}
+          {!isProprietario && (
+            <div className="card" style={{ padding: 12, marginBottom: 12, background: 'var(--bg-elev)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ fontSize: 12.5, fontWeight: 600 }}>{aval.minha ? 'Sua avaliação' : 'Avalie este barbeiro'}</p>
+                <p style={{ fontSize: 11, color: 'var(--text-faint)' }}>{aval.minha ? 'Toque numa estrela para mudar' : '1 avaliação por barbeiro'}</p>
+              </div>
+              <span style={{ opacity: avalSaving ? 0.5 : 1, fontSize: 22 }}>
+                <Stars value={aval.minha ?? 0} onChange={avaliar} readonly={avalSaving} />
+              </span>
+            </div>
+          )}
 
           {showUpload && isProprietario && (
             <div className="card" style={{ padding: 12, marginBottom: 12, background: 'var(--bg-elev)' }}>

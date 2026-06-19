@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import type { Session, BarbeiroDB, StoreConfig, BarbeiroStats } from '@/types';
+import type { Session, Usuario, BarbeiroDB, StoreConfig, BarbeiroStats } from '@/types';
 import { gerarHorarios, getUnidadeStatus, formatDate } from '@/utils';
 import { hojeSP } from '@/lib/datetime';
 import Avatar from '@/components/ui/Avatar';
@@ -15,7 +15,7 @@ function toLocalISO(d: Date): string {
 }
 function cap(s: string): string { return s.charAt(0).toUpperCase() + s.slice(1); }
 
-type Step = 'unidade' | 'barbeiro' | 'servico' | 'data' | 'termos' | 'pagamento' | 'sucesso';
+type Step = 'pref' | 'unidade' | 'barbeiro' | 'servico' | 'data' | 'termos' | 'pagamento' | 'sucesso';
 
 interface PixData {
   transactionId: string;
@@ -29,12 +29,13 @@ interface PixData {
 }
 
 interface Props {
-  session: Session; stats: BarbeiroStats[]; barbeiros: BarbeiroDB[];
+  session: Session; usuario?: Usuario | null; stats: BarbeiroStats[]; barbeiros: BarbeiroDB[];
   storeConfig: StoreConfig; onClose: () => void; onSuccess: () => void;
 }
 
-export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, onSuccess }: Props) {
-  const [step, setStep]             = useState<Step>('unidade');
+export default function AgendarModal({ usuario, stats, barbeiros, storeConfig, onClose, onSuccess }: Props) {
+  const temPrefs = !!(usuario?.barbeiro_favorito || usuario?.servico_favorito || usuario?.unidade_favorita);
+  const [step, setStep]             = useState<Step>(temPrefs ? 'pref' : 'unidade');
   const [unidadeId, setUnidadeId]   = useState('');
   const [barbeiroId, setBarbeiroId] = useState('');
   const [servicoId, setServicoId]   = useState('');
@@ -79,7 +80,29 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
     }
   }, [barbeiroId, unidadeId, data]);
 
-  const stepN = ({ unidade: 1, barbeiro: 2, servico: 3, data: 4, termos: 5, pagamento: 6, sucesso: 7 } as Record<string, number>)[step] ?? 1;
+  const stepN = ({ pref: 1, unidade: 1, barbeiro: 2, servico: 3, data: 4, termos: 5, pagamento: 6, sucesso: 7 } as Record<string, number>)[step] ?? 1;
+
+  // Preenche unidade/barbeiro/serviço a partir das preferências e pula pro horário.
+  // Se faltar alguma, cai na 1ª etapa que ainda precisa de escolha.
+  function usarPrefs() {
+    const bId = usuario?.barbeiro_favorito || '';
+    const sId = usuario?.servico_favorito || '';
+    let uId = usuario?.unidade_favorita || '';
+    const bOk = barbeiros.find(b => b.id === bId && b.ativo);
+    const sOk = servicos.find(s => s.id === sId && s.ativo);
+    let uOk = unidades.find(u => u.id === uId);
+    if (!uOk && bOk) {
+      const u = unidades.find(un => bOk.unidades?.includes(un.id) || un.barbeiros?.includes(bId));
+      if (u) { uId = u.id; uOk = u; }
+    }
+    if (uOk) setUnidadeId(uId);
+    if (bOk) setBarbeiroId(bId);
+    if (sOk) setServicoId(sId);
+    if (uOk && bOk && sOk) setStep('data');
+    else if (!uOk) setStep('unidade');
+    else if (!bOk) setStep('barbeiro');
+    else setStep('servico');
+  }
 
   async function confirmar() {
     if (!termos) return;
@@ -175,7 +198,7 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
   return (
     <div className="modal-back" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxHeight: '90vh', overflowY: 'auto', maxWidth: 520 }}>
-        {step !== 'sucesso' && (
+        {step !== 'sucesso' && step !== 'pref' && (
           <div style={{ marginBottom: 20 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
               <h2 style={{ fontSize: 18, fontWeight: 600 }}>Novo agendamento</h2>
@@ -189,6 +212,28 @@ export default function AgendarModal({ stats, barbeiros, storeConfig, onClose, o
               ))}
             </div>
             <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 8 }}>Passo {Math.min(stepN, 6)} de 6</p>
+          </div>
+        )}
+
+        {step === 'pref' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 600 }}>Novo agendamento</h2>
+              <button className="btn btn-ghost" onClick={onClose} style={{ padding: '4px 10px' }}>×</button>
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-dim)', marginBottom: 16, lineHeight: 1.5 }}>
+              Você tem preferências salvas. Quer usá-las e ir direto pro horário, ou escolher tudo na mão?
+            </p>
+            <div className="card" style={{ padding: 14, marginBottom: 10, background: 'var(--bg-elev)' }}>
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Suas preferências</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-dim)' }}>Unidade</span><span>{unidades.find(u => u.id === usuario?.unidade_favorita)?.nome || '—'}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-dim)' }}>Barbeiro</span><span>{barbeiros.find(b => b.id === usuario?.barbeiro_favorito)?.nome || '—'}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-dim)' }}>Serviço</span><span>{servicos.find(s => s.id === usuario?.servico_favorito)?.nome || '—'}</span></div>
+              </div>
+            </div>
+            <button className="btn btn-primary" style={{ width: '100%', marginBottom: 8 }} onClick={usarPrefs}>Usar minhas preferências</button>
+            <button className="btn btn-outline" style={{ width: '100%' }} onClick={() => setStep('unidade')}>Escolher tudo na mão</button>
           </div>
         )}
 

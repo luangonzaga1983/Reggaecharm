@@ -4,6 +4,7 @@ import {
   getUsuarioByUsername, getUsuarioByEmail, uploadUserPhoto, banirUsuario, desbanirUsuario,
   createBarbeiro, getBarbeiroById, updateBarbeiro,
 } from '@/lib/discord';
+import { removerBarbeiroCompleto } from '@/lib/barbeiros';
 import { getSession, getLiveSession, signToken, canDo, ROLE_LEVEL, cookieOptions, COOKIE_NAME } from '@/lib/auth';
 import { ok, err, unauth, forbidden, notFound, serverErr } from '@/lib/api';
 import { auditFromSession, sanitizeUserOut } from '@/lib/audit';
@@ -202,8 +203,9 @@ export async function POST(req: NextRequest) {
           alvo.barbeiro_id = novoB.id;
         }
       } else if (roleAntes === 'barbeiro' && alvo.barbeiro_id) {
-        const b = await getBarbeiroById(alvo.barbeiro_id);
-        if (b) { b.ativo = false; await updateBarbeiro(b); }
+        // Demitir: remove o registro de barbeiro (some da aba Barbeiros), realoca
+        // clientes e desvincula. Vira conta de cliente normal — sistema de cargo.
+        await removerBarbeiroCompleto(alvo.barbeiro_id);
         alvo.barbeiro_id = null;
       }
 

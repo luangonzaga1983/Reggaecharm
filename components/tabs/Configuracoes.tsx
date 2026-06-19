@@ -1,9 +1,8 @@
 'use client';
 import { useState, useRef, useEffect } from 'react';
 import type { Session, Usuario, BarbeiroDB, StoreConfig } from '@/types';
-import { ROLE_LABEL, ROLE_COLOR, gerarHorarios, applyTheme, getStoredTheme } from '@/utils';
+import { ROLE_LABEL, ROLE_COLOR, applyTheme, getStoredTheme } from '@/utils';
 import Avatar from '@/components/ui/Avatar';
-import PushButton from '@/components/ui/PushButton';
 
 interface Props {
   session: Session; usuario: Usuario | null; barbeiros: BarbeiroDB[];
@@ -24,7 +23,6 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
   useEffect(() => { setTema(getStoredTheme()); }, []);
   const [barbeiroFav, setBarbeiroFav]   = useState(usuario?.barbeiro_favorito || '');
   const [servicoFav, setServicoFav]     = useState(usuario?.servico_favorito || '');
-  const [horarioFav, setHorarioFav]     = useState(usuario?.horario_favorito || '');
   const [unidadeFav, setUnidadeFav]     = useState(usuario?.unidade_favorita || '');
   const [saving, setSaving]             = useState(false);
   const [saved, setSaved]               = useState(false);
@@ -47,11 +45,9 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
   const [savingFoto, setSavingFoto]         = useState(false);
   const fotoRef = useRef<HTMLInputElement>(null);
 
-  const horarios = gerarHorarios(7, 18);
-
   async function salvarPrefs() {
     setSaving(true);
-    await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'prefs', tema, barbeiro_favorito: barbeiroFav || null, servico_favorito: servicoFav || null, horario_favorito: horarioFav || null, unidade_favorita: unidadeFav || null }) });
+    await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'prefs', tema, barbeiro_favorito: barbeiroFav || null, servico_favorito: servicoFav || null, unidade_favorita: unidadeFav || null }) });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000); onUpdate();
   }
 
@@ -103,8 +99,6 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
         <p style={{ fontSize: 12, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Painel</p>
         <h1 style={{ fontSize: 22, fontWeight: 600 }}>Conta</h1>
       </header>
-
-      <div style={{ marginBottom: 12 }}><PushButton /></div>
 
       <Section title="Foto de perfil">
         <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 12 }}>
@@ -174,7 +168,6 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
           {([
             ['Barbeiro favorito', barbeiroFav, setBarbeiroFav, barbeiros.map(b => ({ v: b.id, l: b.nome }))],
             ['Serviço favorito', servicoFav, setServicoFav, storeConfig.servicos.filter(s => s.ativo).map(s => ({ v: s.id, l: s.nome }))],
-            ['Horário favorito', horarioFav, setHorarioFav, horarios.map(h => ({ v: h, l: h }))],
             ['Unidade favorita', unidadeFav, setUnidadeFav, storeConfig.unidades.filter(u => u.ativo).map(u => ({ v: u.id, l: u.nome }))],
           ] as Array<[string, string, (s: string) => void, Array<{ v: string; l: string }>]>).map(([label, val, setter, opts]) => (
             <div key={label}>

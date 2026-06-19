@@ -168,23 +168,28 @@ body {
 .btn-accent:hover:not(:disabled),
 .btn-green:hover:not(:disabled) { opacity: 0.88; }
 
-/* ── Modo Reggae: tricolor (verde/amarelo/vermelho) nos destaques principais ── */
-html[data-reggae='on'] .btn-primary,
-html[data-reggae='on'] .btn-accent,
-html[data-reggae='on'] .btn-green {
-  background-image: linear-gradient(120deg, #2ea043 0%, #ffd60a 50%, #e23b3b 100%);
-  color: #0b0b0c;
-  border-color: transparent;
-}
-html[data-reggae='on'] .progress-fill,
-html[data-reggae='on'] .pulse-glow {
-  background-image: linear-gradient(120deg, #2ea043 0%, #ffd60a 50%, #e23b3b 100%);
-}
-/* Faixa tricolor fininha no topo da página (assinatura reggae). */
+/* ── Modo Reggae: verde sólido nos botões (sem pontas verde/vermelho) + tricolor
+      só em toques de assinatura, p/ ficar limpo e estiloso ── */
+
+/* Faixa tricolor fina no topo da página. */
 html[data-reggae='on'] body::before {
   content: '';
-  position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 1000;
-  background: linear-gradient(90deg, #2ea043 0%, #2ea043 33%, #ffd60a 33%, #ffd60a 66%, #e23b3b 66%, #e23b3b 100%);
+  position: fixed; top: 0; left: 0; right: 0; height: 4px; z-index: 1000;
+  background: linear-gradient(90deg, #2ea043 0 33.3%, #ffd60a 33.3% 66.6%, #e23b3b 66.6% 100%);
+}
+/* Nome da loja em degradê tricolor. */
+html[data-reggae='on'] header .text-display {
+  background: linear-gradient(100deg, #2ea043, #ffd60a 55%, #e23b3b);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent; color: transparent;
+}
+/* Barra de progresso e brilho do CTA usam o tricolor (são finos, ficam bonitos). */
+html[data-reggae='on'] .progress-fill {
+  background-image: linear-gradient(120deg, #2ea043 0%, #ffd60a 50%, #e23b3b 100%);
+}
+/* Avatar/logo com um anel tricolor sutil. */
+html[data-reggae='on'] .logo-mark {
+  box-shadow: 0 0 0 2px #2ea043, 0 0 0 4px #ffd60a, 0 0 0 6px #e23b3b;
 }
 
 .btn-outline {

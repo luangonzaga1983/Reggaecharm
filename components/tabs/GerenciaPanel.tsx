@@ -76,8 +76,9 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
   const isDono = session.role === 'dono';
   const canGerenciarContas = isDono || session.role === 'gerente';
 
-  /** Painel reutilizável de "Gerenciar conta" (Usuários e Barbeiros). */
-  function gerenciarBloco(u: UsuarioSafe) {
+  /** Painel reutilizável de "Gerenciar conta" (Usuários e Barbeiros).
+   *  showCargo: inclui o controle de cargo dentro do painel (usado na aba Barbeiros). */
+  function gerenciarBloco(u: UsuarioSafe, showCargo = false) {
     const aberto = gerTarget === u.id;
     return (
       <>
@@ -133,6 +134,12 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
             <button className="btn btn-primary" style={{ width: '100%' }} onClick={() => salvarGerenciar(u.id)} disabled={gerSaving}>
               {gerSaving ? <><span className="spinner" />Salvando</> : 'Salvar alterações'}
             </button>
+            {showCargo && (
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 2 }}>
+                <p style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Cargo</p>
+                {cargoBloco(u.id, 'Mudar cargo')}
+              </div>
+            )}
           </div>
         )}
       </>
@@ -609,12 +616,10 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
                       <button className="btn btn-outline" style={{ padding: '6px 12px', fontSize: 12 }} onClick={async () => { if (!confirm(b.ativo ? 'Desativar barbeiro? (some da agenda, mas pode reativar)' : 'Reativar barbeiro?')) return; await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: b.id, ativo: !b.ativo }) }); loadAdmin(); onRefresh(); }}>{b.ativo ? 'Desativar' : 'Reativar'}</button>
                       <button className="btn btn-danger" style={{ padding: '6px 12px', fontSize: 12 }} onClick={async () => { if (!confirm(`Excluir PERMANENTEMENTE "${b.nome}"?\n\nApaga o barbeiro e a foto, e remove das unidades. Ação irreversível. O histórico de cortes é mantido.`)) return; const res = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'excluir', barbeiro_id: b.id }) }); if (!res.ok) { alert('Não foi possível excluir.'); return; } setOpenBarber(null); loadAdmin(); onRefresh(); }}>Excluir</button>
                     </div>
-                    {/* Cargo: rebaixar p/ Cliente = demitir (também promover a gerente etc) */}
-                    {canGerenciarContas && linkedUser && <div style={{ marginTop: 8 }}>{cargoBloco(linkedUser.id, 'Mudar cargo / Demitir')}</div>}
-                    {/* Conta do barbeiro (usuário vinculado) — gerir email/senha/saldo/multa */}
+                    {/* Conta do barbeiro (usuário vinculado) — gerir dados + cargo (demitir) */}
                     {canGerenciarContas && (
                       linkedUser
-                        ? gerenciarBloco(linkedUser)
+                        ? gerenciarBloco(linkedUser, true)
                         : <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 10 }}>Barbeiro sem conta de login vinculada — não dá pra logar nem mudar cargo. Exclua e recrie promovendo um usuário.</p>
                     )}
                   </div>

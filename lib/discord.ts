@@ -1,7 +1,7 @@
 import type {
   Usuario, Agendamento, BarbeiroDB, StoreConfig,
   MaintenanceConfig, FotoBarbeiro, UnidadeConfig, ServicoConfig,
-  PixTransaction, PixStatus, ReservaFila, PushSub,
+  PixTransaction, PixStatus, ReservaFila, PushSub, AvalBarbeiro,
 } from '@/types';
 
 // ─── Env (lazy + strict) ──────────────────────────────────────────────────────
@@ -405,11 +405,42 @@ export async function getHorariosOcupados(barbeiroId: string, data: string): Pro
 }
 
 export async function getMediaEstrelas(barbeiroId: string): Promise<{ media: number; total: number }> {
-  const ags = await getAgendamentosByBarbeiro(barbeiroId);
-  const valid = ags.filter(a => a.avaliacao !== null && a.avaliacao > 0);
-  if (!valid.length) return { media: 0, total: 0 };
-  const sum = valid.reduce((s, a) => s + (a.avaliacao ?? 0), 0);
-  return { media: Math.round((sum / valid.length) * 10) / 10, total: valid.length };
+  // Ranking = avaliações diretas do barbeiro (1 por usuário), não mais por corte.
+  const avs = (await getAllAvaliacoesBarbeiro()).filter(a => a.barbeiro_id === barbeiroId);
+  if (!avs.length) return { media: 0, total: 0 };
+  const sum = avs.reduce((s, a) => s + (a.estrelas ?? 0), 0);
+  return { media: Math.round((sum / avs.length) * 10) / 10, total: avs.length };
+}
+
+// ─── Avaliações de barbeiro (1 por usuário, global) ───────────────────────────
+// Guardadas no canal de agendamentos com marcador __type (parseAg ignora __type).
+function parseAvalB(m: DMsg): AvalBarbeiro | null {
+  try {
+    const d = JSON.parse(m.content);
+    if (d.__type !== 'aval_barbeiro') return null;
+    const { __type, ...rest } = d;
+    return { ...rest, _messageId: m.id };
+  } catch { return null; }
+}
+
+export async function getAllAvaliacoesBarbeiro(opts: { fresh?: boolean } = {}): Promise<AvalBarbeiro[]> {
+  return (await fetchAll(CH_AGD(), opts)).map(parseAvalB).filter(Boolean) as AvalBarbeiro[];
+}
+
+export const getAvaliacaoBarbeiro = async (barbeiroId: string, usuarioId: string) =>
+  (await getAllAvaliacoesBarbeiro()).find(a => a.barbeiro_id === barbeiroId && a.usuario_id === usuarioId) ?? null;
+
+/** Cria ou atualiza a avaliação do usuário para o barbeiro (limite: 1 por par). */
+export async function upsertAvaliacaoBarbeiro(barbeiroId: string, usuarioId: string, estrelas: number): Promise<AvalBarbeiro> {
+  const existente = (await getAllAvaliacoesBarbeiro({ fresh: true }))
+    .find(a => a.barbeiro_id === barbeiroId && a.usuario_id === usuarioId);
+  const data = { barbeiro_id: barbeiroId, usuario_id: usuarioId, estrelas, updated_at: new Date().toISOString() };
+  if (existente?._messageId) {
+    await edit(CH_AGD(), existente._messageId, JSON.stringify({ __type: 'aval_barbeiro', ...data }));
+    return { ...data, _messageId: existente._messageId };
+  }
+  const msg = await post(CH_AGD(), JSON.stringify({ __type: 'aval_barbeiro', ...data }));
+  return { ...data, _messageId: msg.id };
 }
 
 export async function createAgendamento(ag: Omit<Agendamento, '_messageId'>): Promise<Agendamento> {
@@ -495,14 +526,17 @@ function parseBar(m: DMsg): BarbeiroDB | null {
 }
 
 export async function getAllBarbeiros(): Promise<BarbeiroDB[]> {
-  const [msgs, users] = await Promise.all([fetchAll(CH_BAR()), getAllUsuarios()]);
-  const barbs = msgs.map(parseBar).filter(Boolean) as BarbeiroDB[];
-  // Foto do barbeiro = foto da CONTA vinculada (o mesmo sistema que já funciona em
-  // "Gerenciar conta"). Barbeiro é conta+cargo, então a foto é a do usuário; cai
-  // pra foto do próprio registro só se a conta não tiver nenhuma.
-  const fotoDaConta = new Map<string, string>();
-  for (const u of users) if (u.barbeiro_id && u.foto_url) fotoDaConta.set(u.barbeiro_id, u.foto_url);
-  return barbs.map(b => ({ ...b, photo_url: fotoDaConta.get(b.id) ?? b.photo_url }));
+  const barbs = (await fetchAll(CH_BAR())).map(parseBar).filter(Boolean) as BarbeiroDB[];
+  // Foto do barbeiro = foto da CONTA vinculada (sistema único de foto). Resiliente:
+  // se a leitura de usuários falhar, mantém a foto do próprio registro.
+  try {
+    const users = await getAllUsuarios();
+    const fotoDaConta = new Map<string, string>();
+    for (const u of users) if (u.barbeiro_id && u.foto_url) fotoDaConta.set(u.barbeiro_id, u.foto_url);
+    return barbs.map(b => ({ ...b, photo_url: fotoDaConta.get(b.id) ?? b.photo_url }));
+  } catch {
+    return barbs;
+  }
 }
 export const getBarbeiroById = async (id: string) => (await getAllBarbeiros()).find(b => b.id === id) ?? null;
 
