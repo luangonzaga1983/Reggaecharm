@@ -8,12 +8,15 @@ import type { Session } from '@/types';
  * Em produção atrás de CDN (Cloudflare/Vercel), confiar primeiro nesses.
  */
 export function clientIp(req: NextRequest): string {
-  return (
-    req.headers.get('cf-connecting-ip') ||
-    req.headers.get('x-real-ip') ||
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    'unknown'
-  );
+  // NÃO confiar em cf-connecting-ip / x-real-ip: sem Cloudflare na frente, esses
+  // headers são controlados pelo cliente e permitiriam burlar rate-limit, lockout
+  // e ban por IP. Usa o IP da borda (req.ip) e, na falta, a 1ª entrada do
+  // x-forwarded-for setada pela Vercel.
+  const direct = (req as unknown as { ip?: string }).ip;
+  if (direct) return direct;
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0]!.trim();
+  return 'unknown';
 }
 
 /**

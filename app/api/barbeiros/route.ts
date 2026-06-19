@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAllBarbeiros, getBarbeiroById, createBarbeiro, updateBarbeiro, uploadBarberPhoto, getUsuarioById, deleteBarbeiro, getStoreConfig, saveStoreConfig, getAllAgendamentos, updateAgendamento, updateUsuario } from '@/lib/discord';
+import { getAllBarbeiros, getBarbeiroById, updateBarbeiro, uploadBarberPhoto, getUsuarioById, deleteBarbeiro, getStoreConfig, saveStoreConfig, getAllAgendamentos, updateAgendamento, updateUsuario } from '@/lib/discord';
 import { pushToUsuario } from '@/lib/push';
 import { getLiveSession, canDo } from '@/lib/auth';
 import { ok, err, unauth, forbidden, notFound, serverErr } from '@/lib/api';
@@ -96,23 +96,11 @@ export async function POST(req: NextRequest) {
     if (!body || typeof body !== 'object') return err('Payload inválido');
     const { action } = body;
 
+    // Criação avulsa de barbeiro foi removida: barbeiro agora é sempre uma conta
+    // de usuário promovida ao cargo 'barbeiro' (cria/vincula o registro em
+    // /api/usuarios action=promover). Isso evita barbeiros órfãos sem login.
     if (action === 'criar') {
-      const nome = sanitizeString(body.nome, 100);
-      if (!nome) return err('Nome é obrigatório');
-      const especialidades = Array.isArray(body.especialidades)
-        ? body.especialidades.map((e: unknown) => sanitizeString(e, 60)).filter(Boolean).slice(0, 30)
-        : [];
-      const unidades = Array.isArray(body.unidades)
-        ? body.unidades.map((u: unknown) => sanitizeString(u, 64)).filter(Boolean).slice(0, 50)
-        : [];
-      const novo = await createBarbeiro({
-        id: 'b' + crypto.randomUUID().replace(/-/g,'').slice(0,8),
-        nome, especialidades, unidades,
-        ativo: true,
-        photo_message_id: null,
-      });
-      auditFromSession(session, 'config_change', { target_id: novo.id, target_label: nome, meta: { entity: 'barbeiro', op: 'criar' }, ip, ua });
-      return ok({ barbeiro: novo });
+      return err('Crie barbeiros promovendo um usuário ao cargo Barbeiro (aba Usuários).', 400);
     }
 
     if (action === 'editar') {

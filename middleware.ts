@@ -26,12 +26,16 @@ function rateLimit(key: string, limit: number, windowMs: number): boolean {
 }
 
 function clientIp(req: NextRequest): string {
-  return (
-    req.headers.get('cf-connecting-ip') ||
-    req.headers.get('x-real-ip') ||
-    req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
-    'unknown'
-  );
+  // NÃO confiar em cf-connecting-ip / x-real-ip: o app não está atrás de Cloudflare,
+  // então esses headers são 100% controlados pelo cliente — confiá-los deixaria
+  // qualquer um burlar rate-limit, lockout de login e ban por IP (basta mandar um
+  // valor novo a cada request). Na Vercel o IP real chega em req.ip (borda) e como
+  // 1ª entrada de x-forwarded-for, setada pela própria plataforma.
+  const direct = (req as unknown as { ip?: string }).ip;
+  if (direct) return direct;
+  const xff = req.headers.get('x-forwarded-for');
+  if (xff) return xff.split(',')[0]!.trim();
+  return 'unknown';
 }
 
 function sameOrigin(req: NextRequest): boolean {
@@ -123,6 +127,13 @@ export function middleware(req: NextRequest) {
   if (pathname.startsWith('/api/')) {
     const res = NextResponse.next();
     applySecurityHeaders(res, buildCsp()); // sem nonce → script-src 'none' (JSON)
+    // /api/img é um proxy de imagem (302 cacheável) — deixa o Cache-Control da rota
+    // valer. Todo o resto da API é no-store (respostas com dado de sessão/privado).
+    if (pathname.startsWith('/api/img')) {
+      // Proxy de imagem: GET cacheável que só redireciona pro CDN do Discord.
+      // Fora do rate-limit (páginas com muitos avatares não podem ser barradas).
+      return res;
+    }
     res.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.headers.set('Pragma', 'no-cache');
 

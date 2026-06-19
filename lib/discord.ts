@@ -28,6 +28,16 @@ const CH_PUSH = () => process.env.DISCORD_CHANNEL_PUSH || CH_CFG();
 const BASE = 'https://discord.com/api/v10';
 const DISCORD_MSG_LIMIT = 1900;
 
+// ─── Proxy de imagens ─────────────────────────────────────────────────────────
+// URLs de anexo do Discord são ASSINADAS e EXPIRAM (~24h). Servir o link cru ao
+// browser faz a foto sumir depois que a assinatura vence. Em vez disso o cliente
+// recebe um caminho ESTÁVEL (/api/img?s=...&m=<messageId>) e a rota resolve a URL
+// fresca server-side a cada acesso. Nunca expira.
+type ImgScope = 'usr' | 'bar' | 'foto';
+export function attachmentProxy(scope: ImgScope, msgId: string): string {
+  return `/api/img?s=${scope}&m=${encodeURIComponent(msgId)}`;
+}
+
 // ─── Discord primitives ───────────────────────────────────────────────────────
 
 interface DAttachment { url: string; filename?: string; }
@@ -152,6 +162,21 @@ async function uploadFile(
   return res.json();
 }
 
+// Resolve a URL assinada (fresca) do 1º anexo de uma mensagem. Usado pelo /api/img.
+const _chByScope: Record<ImgScope, () => string> = {
+  usr: () => CH_USR(), bar: () => CH_BAR(), foto: () => CH_FOTO(),
+};
+export async function resolveAttachmentUrl(scope: string, msgId: string): Promise<string | null> {
+  const ch = _chByScope[scope as ImgScope];
+  if (!ch || !/^\d{5,30}$/.test(msgId)) return null; // escopo desconhecido / id inválido
+  try {
+    const res = await discordFetch(`${BASE}/channels/${ch()}/messages/${msgId}`, { headers: headers(TOKEN()) });
+    if (!res.ok) return null;
+    const m = await res.json() as DMsg;
+    return m.attachments?.[0]?.url ?? null;
+  } catch { return null; }
+}
+
 // ─── Store Config (stored as JSON attachment to bypass 2000-char limit) ───────
 
 const DEFAULT_CONFIG: Omit<StoreConfig, '_messageId'> = {
@@ -264,7 +289,7 @@ function parseUser(m: DMsg): Usuario | null {
   try {
     const d = JSON.parse(m.content);
     if (d.__type) return null;
-    return { ...d, foto_url: m.attachments?.[0]?.url ?? null, _messageId: m.id };
+    return { ...d, foto_url: m.attachments?.[0] ? attachmentProxy('usr', m.id) : null, _messageId: m.id };
   } catch { return null; }
 }
 
@@ -294,7 +319,7 @@ export async function uploadUserPhoto(u: Usuario, buffer: ArrayBuffer, filename:
   if (u._messageId) await del(CH_USR(), u._messageId);
   const { _messageId, foto_url, ...data } = u;
   const msg = await uploadFile(CH_USR(), JSON.stringify(data), buffer, filename, mime);
-  return msg.attachments?.[0]?.url ?? '';
+  return msg.attachments?.[0] ? attachmentProxy('usr', msg.id) : '';
 }
 
 export async function deleteUsuario(msgId: string): Promise<void> {
@@ -445,7 +470,7 @@ function parseBar(m: DMsg): BarbeiroDB | null {
   try {
     const d = JSON.parse(m.content);
     if (d.__type) return null;
-    return { ...d, photo_url: m.attachments?.[0]?.url ?? null, _messageId: m.id };
+    return { ...d, photo_url: m.attachments?.[0] ? attachmentProxy('bar', m.id) : null, _messageId: m.id };
   } catch { return null; }
 }
 
@@ -469,7 +494,7 @@ export async function uploadBarberPhoto(b: BarbeiroDB, buffer: ArrayBuffer, file
   if (b._messageId) await del(CH_BAR(), b._messageId);
   const { _messageId, photo_url, ...data } = b;
   const msg = await uploadFile(CH_BAR(), JSON.stringify({ ...data, photo_message_id: null }), buffer, filename, mime);
-  return msg.attachments?.[0]?.url ?? '';
+  return msg.attachments?.[0] ? attachmentProxy('bar', msg.id) : '';
 }
 
 /**
@@ -522,7 +547,7 @@ function parseFoto(m: DMsg): FotoBarbeiro | null {
     const d = JSON.parse(m.content);
     if (d.__type !== 'foto_barbeiro') return null;
     const { __type, ...rest } = d;
-    return { ...rest, foto_url: m.attachments?.[0]?.url ?? null, _messageId: m.id };
+    return { ...rest, foto_url: m.attachments?.[0] ? attachmentProxy('foto', m.id) : null, _messageId: m.id };
   } catch { return null; }
 }
 
@@ -539,7 +564,7 @@ export async function createFotoBarbeiro(
   const data = new Date().toLocaleDateString('pt-BR');
   const meta = JSON.stringify({ __type: 'foto_barbeiro', id, barbeiro_id: barbeiroId, descricao, data });
   const msg  = await uploadFile(CH_FOTO(), meta, buffer, filename, mime);
-  return { id, barbeiro_id: barbeiroId, descricao, data, foto_url: msg.attachments?.[0]?.url ?? null, _messageId: msg.id };
+  return { id, barbeiro_id: barbeiroId, descricao, data, foto_url: msg.attachments?.[0] ? attachmentProxy('foto', msg.id) : null, _messageId: msg.id };
 }
 
 export async function deleteFotoBarbeiro(msgId: string): Promise<void> {

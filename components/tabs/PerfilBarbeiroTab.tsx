@@ -13,6 +13,7 @@ export default function PerfilBarbeiroTab({ usuario, agendamentos, onRefresh }: 
   const [fotoPreview, setFotoPreview]     = useState<string | null>(null);
   const [fotoFile, setFotoFile]           = useState<File | null>(null);
   const [savingFoto, setSavingFoto]       = useState(false);
+  const [fotoPerfilErro, setFotoPerfilErro] = useState('');
   const [fotos, setFotos]                 = useState<FotoBarbeiro[]>([]);
   const [fotosLoading, setFotosLoading]   = useState(false);
   const [fotoAberta, setFotoAberta]       = useState<FotoBarbeiro | null>(null);
@@ -46,13 +47,20 @@ export default function PerfilBarbeiroTab({ usuario, agendamentos, onRefresh }: 
 
   async function salvarFotoPerfil() {
     if (!fotoFile || !barbeiro) return;
-    setSavingFoto(true);
+    setSavingFoto(true); setFotoPerfilErro('');
     try {
       const form = new FormData();
       form.append('barbeiro_id', barbeiro.id);
       form.append('foto', fotoFile);
-      await fetch('/api/barbeiros', { method: 'POST', body: form });
+      const res = await fetch('/api/barbeiros', { method: 'POST', body: form });
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        setFotoPerfilErro(d.error || 'Não foi possível enviar a foto. Tente outra imagem (JPG/PNG, até 8MB).');
+        return;
+      }
       setFotoFile(null); await carregarBarbeiro(); onRefresh();
+    } catch {
+      setFotoPerfilErro('Sem conexão. Tente de novo.');
     } finally { setSavingFoto(false); }
   }
 
@@ -129,6 +137,7 @@ export default function PerfilBarbeiroTab({ usuario, agendamentos, onRefresh }: 
             </button>
           )}
         </div>
+        {fotoPerfilErro && <p style={{ color: 'var(--danger)', fontSize: 12, marginTop: 8 }}>{fotoPerfilErro}</p>}
       </div>
 
       <div className="card" style={{ padding: 16, marginBottom: 12 }}>

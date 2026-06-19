@@ -227,21 +227,20 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
   }
 
   async function salvarBarbeiro() {
+    // Barbeiro só existe vinculado a uma conta (criado ao promover um usuário).
+    // Aqui só EDITA um barbeiro existente — não há mais criação avulsa.
+    if (!bEditId) { setBError('Barbeiro inválido. Promova um usuário a barbeiro na aba Usuários.'); return; }
     setBError(''); setBSaving(true);
     try {
       const esp = bEsp.split(',').map(s => s.trim()).filter(Boolean);
       const almoco = bAlmocoIni && bAlmocoFim ? { inicio: bAlmocoIni, fim: bAlmocoFim } : null;
       if (almoco && almoco.inicio >= almoco.fim) { setBError('Almoço: início deve ser antes do fim'); setBSaving(false); return; }
-      if (bEditId) {
-        await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: bEditId, nome: bNome, especialidades: esp, unidades: bUnidades, almoco, folgas: bFolgas }) });
-        if (bFotoFile) { const form = new FormData(); form.append('barbeiro_id', bEditId); form.append('foto', bFotoFile); await fetch('/api/barbeiros', { method: 'POST', body: form }); }
-      } else {
-        const res = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'criar', nome: bNome, especialidades: esp, unidades: bUnidades }) });
-        const d = await res.json();
-        if (d.barbeiro?.id) {
-          if (bFotoFile) { const form = new FormData(); form.append('barbeiro_id', d.barbeiro.id); form.append('foto', bFotoFile); await fetch('/api/barbeiros', { method: 'POST', body: form }); }
-          if (almoco || bFolgas.length) await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: d.barbeiro.id, almoco, folgas: bFolgas }) });
-        }
+      const res = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'editar', barbeiro_id: bEditId, nome: bNome, especialidades: esp, unidades: bUnidades, almoco, folgas: bFolgas }) });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); setBError(d.error || 'Erro ao salvar'); setBSaving(false); return; }
+      if (bFotoFile) {
+        const form = new FormData(); form.append('barbeiro_id', bEditId); form.append('foto', bFotoFile);
+        const fr = await fetch('/api/barbeiros', { method: 'POST', body: form });
+        if (!fr.ok) { const d = await fr.json().catch(() => ({})); setBError(d.error || 'Dados salvos, mas a foto falhou. Tente outra imagem (JPG/PNG, até 8MB).'); setBSaving(false); loadAdmin(); onRefresh(); return; }
       }
       // Sincroniza bidirecionalmente: adiciona o ID do barbeiro nas unidades selecionadas
       if (bUnidades.length && bEditId) {
@@ -428,7 +427,11 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
         </div>
       ) : activeTab === 'barbeiros' ? (
         <div>
-          <button className="btn btn-primary" style={{ width: '100%', marginBottom: 12 }} onClick={() => abrirFormBarbeiro(null)}>+ Novo barbeiro</button>
+          <div className="card" style={{ padding: 12, marginBottom: 12, background: 'var(--bg-elev)' }}>
+            <p style={{ fontSize: 12.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+              Barbeiro é uma <strong>conta de usuário com o cargo Barbeiro</strong>. Para adicionar um, vá em <strong>Usuários → abrir o usuário → Cargo → Barbeiro</strong>. Ele aparece aqui automaticamente para editar especialidades, unidades, foto e horários.
+            </p>
+          </div>
           {bFormOpen && (
             <div className="card" style={{ padding: 16, marginBottom: 12 }}>
               <p style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 12 }}>{bEditId ? 'Editar' : 'Novo barbeiro'}</p>
