@@ -136,8 +136,12 @@ export interface Agendamento {
   multa_aplicada?: number | null;
   /** Forma de pagamento: 'pix' (online), 'dinheiro' (na barbearia) ou 'credito' (vale). */
   pagamento_metodo?: 'pix' | 'dinheiro' | 'credito' | null;
-  /** Motivo de cancelamento automático (ex: 'barbeiro_removido'). */
+  /** Motivo de cancelamento (texto do cliente/barbeiro, ou auto ex: 'barbeiro_removido'). */
   cancelado_motivo?: string | null;
+  /** Quem cancelou: 'cliente' | 'barbeiro' | 'gerente' | 'dono' (define quem recebe o aviso). */
+  cancelado_por?: UserRole | null;
+  /** O destinatário já viu o aviso de cancelamento? (banner mostra 1x até dar OK). */
+  cancel_aviso_visto?: boolean | null;
   /** Crédito (BRL) abatido deste corte no momento do agendamento. PIX cobra valor − isto. */
   credito_usado?: number | null;
   /** ISO de criação. PIX não pago só segura o horário por uma janela curta. */

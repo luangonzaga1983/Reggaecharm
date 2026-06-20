@@ -67,6 +67,17 @@ export default function HorariosTab({ session, barbeiros, agendamentos, clientes
     onRefresh(); // agendamento sai da fila
   }
 
+  async function cancelarBarbeiro(id: string) {
+    const motivo = prompt('Por que está cancelando? (o cliente vai ver o motivo)');
+    if (motivo === null) return;
+    if (!motivo.trim()) { alert('Informe o motivo do cancelamento.'); return; }
+    setBusy(id);
+    const res = await fetch('/api/agendamentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancelar', agendamento_id: id, motivo: motivo.trim() }) });
+    setBusy(null);
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Não foi possível cancelar.'); return; }
+    onRefresh();
+  }
+
   return (
     <div>
       <header style={{ marginBottom: 18 }}>
@@ -144,6 +155,9 @@ export default function HorariosTab({ session, barbeiros, agendamentos, clientes
                         <button className="btn btn-outline" style={{ padding: '7px 10px', fontSize: 11, position: 'relative' }} onClick={() => setAvisoAg(a)}>
                           💬 Recados{avisoCounts[a.id] ? ` · ${avisoCounts[a.id]}` : ''}
                         </button>
+                        <button className="btn btn-ghost" style={{ padding: '7px 10px', fontSize: 11, color: 'var(--danger)' }} disabled={busy === a.id} onClick={() => cancelarBarbeiro(a.id)}>
+                          Cancelar
+                        </button>
                         {!liberado && <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>libera às {a.horario}</span>}
                       </div>
                     </div>
@@ -197,6 +211,7 @@ export default function HorariosTab({ session, barbeiros, agendamentos, clientes
       {avisoAg && (
         <AvisoModal agendamentoId={avisoAg.id} sessionId={session.id}
           outroNome={clientes[avisoAg.usuario_id]?.apelido || clientes[avisoAg.usuario_id]?.nome || 'Cliente'}
+          presets={['Pode vir', 'Vou atrasar um pouco', 'Tô te esperando', 'Confirma presença?']}
           onClose={() => setAvisoAg(null)} onSent={carregarAvisoCounts} />
       )}
     </div>

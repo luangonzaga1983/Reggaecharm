@@ -6,6 +6,7 @@ import { useApp } from '@/hooks/useApp';
 
 import ThemeToggle         from '@/components/ui/ThemeToggle';
 import Logo                from '@/components/ui/Logo';
+import CancelBanner        from '@/components/ui/CancelBanner';
 import Landing             from '@/components/Landing';
 import AgendarModal        from '@/components/modals/AgendarModal';
 import PerfilBarbeiroModal from '@/components/modals/PerfilBarbeiroModal';
@@ -54,6 +55,28 @@ export default function App() {
   const tabs = getTabsForRole(session.role);
   const activeTab = tabs.includes(tab) ? tab : tabs[0];
 
+  // Avisos de cancelamento direcionados a MIM (cliente recebe se barbeiro cancelou;
+  // barbeiro recebe se o cliente cancelou). Mostra 1x até dar OK.
+  const cancelAvisos = (() => {
+    const vistos = new Set<string>();
+    const out: { ag: typeof agendamentos[number]; souCliente: boolean }[] = [];
+    for (const a of [...agendamentos, ...adminAgs]) {
+      if (vistos.has(a.id)) continue;
+      if (a.status !== 'cancelado' || !a.cancelado_motivo || !a.cancelado_por || a.cancel_aviso_visto) continue;
+      const souClienteRecipiente = a.usuario_id === session.id && a.cancelado_por !== 'cliente';
+      const souBarbeiroRecipiente = session.role === 'barbeiro' && usuario?.barbeiro_id === a.barbeiro_id && a.cancelado_por === 'cliente';
+      if (!souClienteRecipiente && !souBarbeiroRecipiente) continue;
+      vistos.add(a.id);
+      out.push({ ag: a, souCliente: souClienteRecipiente });
+    }
+    return out;
+  })();
+
+  async function dismissCancelAviso(agId: string) {
+    await fetch('/api/agendamentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancel_aviso_visto', agendamento_id: agId }) });
+    refresh();
+  }
+
   return (
     <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column' }}>
       <div className="bg-3d" />
@@ -84,6 +107,7 @@ export default function App() {
 
       {/* Content */}
       <main className="scene" style={{ flex: 1, width: '100%', maxWidth: 760, margin: '0 auto', padding: '22px 16px calc(84px + env(safe-area-inset-bottom))' }}>
+        <CancelBanner itens={cancelAvisos} onDismiss={dismissCancelAviso} />
         <div key={activeTab} className="tab-swap">
         {activeTab === 'dashboard' && (
           <Dashboard session={session} usuario={usuario} stats={stats} agendamentos={agendamentos}

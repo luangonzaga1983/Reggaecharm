@@ -57,8 +57,11 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
     setSavingAv(null); onRefresh();
   }
   async function cancelar(id: string) {
-    if (!confirm('Cancelar este agendamento?')) return;
-    await fetch('/api/agendamentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancelar', agendamento_id: id }) });
+    const motivo = prompt('Por que está cancelando? (o barbeiro vai ver o motivo)');
+    if (motivo === null) return;
+    if (!motivo.trim()) { alert('Informe o motivo do cancelamento.'); return; }
+    const res = await fetch('/api/agendamentos', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'cancelar', agendamento_id: id, motivo: motivo.trim() }) });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Não foi possível cancelar.'); return; }
     onRefresh();
   }
 

@@ -339,6 +339,11 @@ export async function POST(req: NextRequest) {
         const u = await getUsuarioById(session.id);
         if (ag.barbeiro_id !== u?.barbeiro_id) return forbidden();
       }
+      const motivoCancel = sanitizeString(body.motivo, 200);
+      if (!motivoCancel) return err('Informe o motivo do cancelamento', 400);
+      ag.cancelado_motivo  = motivoCancel;
+      ag.cancelado_por     = ehDono ? 'cliente' : session.role;
+      ag.cancel_aviso_visto = false; // aparece p/ o outro lado na próxima vez que abrir
 
       // Devolve ao saldo o crédito que tinha sido abatido (corte não aconteceu).
       if (Number(ag.credito_usado ?? 0) > 0 && (ag.presenca ?? 'pendente') === 'pendente') {
@@ -527,6 +532,16 @@ export async function POST(req: NextRequest) {
       if (existentes.length >= 30) return err('Limite de recados atingido neste agendamento');
       const aviso = await createAviso(agId, session.id, texto);
       return ok({ aviso });
+    }
+
+    if (action === 'cancel_aviso_visto') {
+      const ag = await getAgendamentoById(sanitizeString(body.agendamento_id, 64));
+      if (!ag) return notFound();
+      // Só o destinatário do aviso (ou admin) marca como visto.
+      if (!(await podeVerAviso(session, ag))) return forbidden();
+      ag.cancel_aviso_visto = true;
+      await updateAgendamento(ag);
+      return ok();
     }
 
     return err('Ação inválida');

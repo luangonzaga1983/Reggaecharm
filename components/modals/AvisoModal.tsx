@@ -2,17 +2,19 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { AvisoAg } from '@/types';
 
-const PRESETS = ['Vou atrasar ~10 min', 'Estou a caminho', 'Cheguei', 'Preciso remarcar'];
+const PRESETS_PADRAO = ['Vou atrasar ~10 min', 'Estou a caminho', 'Cheguei', 'Preciso remarcar'];
 
 interface Props {
   agendamentoId: string;
   sessionId: string;
   outroNome: string;
+  /** Frases rápidas conforme quem está mandando (cliente ou barbeiro). */
+  presets?: string[];
   onClose: () => void;
   onSent?: () => void;
 }
 
-export default function AvisoModal({ agendamentoId, sessionId, outroNome, onClose, onSent }: Props) {
+export default function AvisoModal({ agendamentoId, sessionId, outroNome, presets = PRESETS_PADRAO, onClose, onSent }: Props) {
   const [avisos, setAvisos]   = useState<AvisoAg[]>([]);
   const [loading, setLoading] = useState(true);
   const [texto, setTexto]     = useState('');
@@ -57,16 +59,19 @@ export default function AvisoModal({ agendamentoId, sessionId, outroNome, onClos
           ) : avisos.map(a => {
             const meu = a.from_id === sessionId;
             return (
-              <div key={a.id} style={{ alignSelf: meu ? 'flex-end' : 'flex-start', maxWidth: '82%', background: meu ? 'var(--accent)' : 'var(--surface2)', color: meu ? 'var(--accent-contrast)' : 'var(--text)', padding: '8px 11px', borderRadius: 10, fontSize: 13, lineHeight: 1.4 }}>
-                <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.texto}</p>
-                <p style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>{new Date(a.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+              <div key={a.id} style={{ alignSelf: meu ? 'flex-end' : 'flex-start', maxWidth: '82%', display: 'flex', flexDirection: 'column', alignItems: meu ? 'flex-end' : 'flex-start' }}>
+                <span style={{ fontSize: 10, color: 'var(--text-faint)', margin: '0 4px 2px' }}>{meu ? 'Você' : outroNome}</span>
+                <div style={{ background: meu ? 'var(--accent)' : 'var(--surface2)', color: meu ? 'var(--accent-contrast)' : 'var(--text)', padding: '8px 11px', borderRadius: 10, fontSize: 13, lineHeight: 1.4 }}>
+                  <p style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>{a.texto}</p>
+                  <p style={{ fontSize: 10, opacity: 0.7, marginTop: 3, textAlign: 'right' }}>{new Date(a.created_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
               </div>
             );
           })}
         </div>
 
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
-          {PRESETS.map(p => (
+          {presets.map(p => (
             <button key={p} className="btn btn-outline" style={{ padding: '5px 9px', fontSize: 11 }} disabled={enviando} onClick={() => enviar(p)}>{p}</button>
           ))}
         </div>
