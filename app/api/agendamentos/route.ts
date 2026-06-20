@@ -6,7 +6,7 @@ import {
   getAgendamentosByUnidade, getAllBarbeiros, getBarbeiroById, getStoreConfig,
   getPixTxsByUsuario, updatePixTransaction, getAllUsuarios,
   getAllReservas, getReservaBySlot, getReservasByUsuario, createReserva, deleteReserva,
-  seguraSlot,
+  seguraSlot, getAvisosByAgendamento, getAllAvisos, createAviso,
 } from '@/lib/discord';
 import { getPixStatus } from '@/lib/sigilo';
 import { pushToDonos, pushToUsuario } from '@/lib/push';
@@ -20,6 +20,17 @@ import { hojeSP } from '@/lib/datetime';
 import type { PresencaStatus } from '@/types';
 
 const MULTA_FALTA_BRL = 10;
+
+/** Pode ver/mandar recado neste agendamento? Cliente dono, barbeiro do corte, ou admin. */
+async function podeVerAviso(session: { id: string; role: any }, ag: { usuario_id: string; barbeiro_id: string }): Promise<boolean> {
+  if (ag.usuario_id === session.id) return true;
+  if (!canDo(session.role, 'ver_todos_ag')) return false;
+  if (session.role === 'barbeiro') {
+    const u = await getUsuarioById(session.id);
+    return u?.barbeiro_id === ag.barbeiro_id;
+  }
+  return true; // gerente/dono
+}
 
 /** Data 'yyyy-mm-dd' → "qua, 28 mai" (pt-BR), para corpo de notificação. */
 function fmtData(iso: string): string {
@@ -98,6 +109,34 @@ export async function GET(req: NextRequest) {
         clientes[id] = { nome: cu?.nome ?? '—', apelido: cu?.apelido ?? null, fiel: total >= FIEL_MIN, total_cortes: total };
       }
       return NextResponse.json({ agendamentos: ags, clientes });
+    }
+
+    if (action === 'avisos') {
+      const session = await getLiveSession();
+      if (!session) return unauth();
+      const agId = sanitizeString(searchParams.get('agendamento_id'), 64);
+      const ag = await getAgendamentoById(agId);
+      if (!ag) return notFound();
+      if (!(await podeVerAviso(session, ag))) return forbidden();
+      return NextResponse.json({ avisos: await getAvisosByAgendamento(agId) });
+    }
+
+    if (action === 'avisos_count') {
+      const session = await getLiveSession();
+      if (!session) return unauth();
+      let agIds: Set<string> | null = null; // null = admin (vê todos)
+      if (!canDo(session.role, 'ver_todos_ag')) {
+        agIds = new Set((await getAgendamentosByUsuario(session.id)).map(a => a.id));
+      } else if (session.role === 'barbeiro') {
+        const u = await getUsuarioById(session.id);
+        agIds = new Set((u?.barbeiro_id ? await getAgendamentosByBarbeiro(u.barbeiro_id) : []).map(a => a.id));
+      }
+      const counts: Record<string, number> = {};
+      for (const m of await getAllAvisos()) {
+        if (agIds && !agIds.has(m.agendamento_id)) continue;
+        counts[m.agendamento_id] = (counts[m.agendamento_id] || 0) + 1;
+      }
+      return NextResponse.json({ counts });
     }
 
     return err('Ação inválida');
@@ -475,6 +514,19 @@ export async function POST(req: NextRequest) {
         if (u) { u.pontos = (u.pontos ?? 0) + 5; await updateUsuario(u); }
       }
       return ok();
+    }
+
+    if (action === 'avisar') {
+      const agId  = sanitizeString(body.agendamento_id, 64);
+      const texto = sanitizeString(body.texto, 300);
+      if (!agId || !texto) return err('Mensagem vazia');
+      const ag = await getAgendamentoById(agId);
+      if (!ag) return notFound();
+      if (!(await podeVerAviso(session, ag))) return forbidden();
+      const existentes = await getAvisosByAgendamento(agId);
+      if (existentes.length >= 30) return err('Limite de recados atingido neste agendamento');
+      const aviso = await createAviso(agId, session.id, texto);
+      return ok({ aviso });
     }
 
     return err('Ação inválida');

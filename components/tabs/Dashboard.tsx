@@ -9,6 +9,7 @@ import Tilt from '@/components/ui/Tilt';
 import PaymentModal from '@/components/modals/PaymentModal';
 import ReagendarModal from '@/components/modals/ReagendarModal';
 import UnidadeModal from '@/components/modals/UnidadeModal';
+import AvisoModal from '@/components/modals/AvisoModal';
 
 interface Props {
   session: Session; usuario: Usuario | null; stats: BarbeiroStats[];
@@ -28,7 +29,12 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
   const [payFine, setPayFine]           = useState(false);
   const [reagendarAg, setReagendarAg]   = useState<Agendamento | null>(null);
   const [unidadeAberta, setUnidadeAberta] = useState<UnidadeConfig | null>(null);
+  const [avisoAg, setAvisoAg]             = useState<Agendamento | null>(null);
+  const [avisoCounts, setAvisoCounts]     = useState<Record<string, number>>({});
   const [preloadMaps, setPreloadMaps]     = useState(false);
+
+  const carregarAvisoCounts = () => fetch('/api/agendamentos?action=avisos_count').then(r => r.ok ? r.json() : { counts: {} }).then(d => setAvisoCounts(d.counts || {})).catch(() => {});
+  useEffect(() => { carregarAvisoCounts(); }, [agendamentos]);
   const multa = Number(usuario?.multa_pendente ?? 0);
   const creditoSaldo = Number(usuario?.credito_saldo ?? 0);
 
@@ -102,6 +108,11 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
       )}
       {unidadeAberta && (
         <UnidadeModal unidade={unidadeAberta} onClose={() => setUnidadeAberta(null)} />
+      )}
+      {avisoAg && (
+        <AvisoModal agendamentoId={avisoAg.id} sessionId={session.id}
+          outroNome={getB(avisoAg.barbeiro_id)?.nome || 'Barbeiro'}
+          onClose={() => setAvisoAg(null)} onSent={carregarAvisoCounts} />
       )}
       {preloadMaps && (
         <div aria-hidden style={{ position: 'absolute', width: 0, height: 0, overflow: 'hidden', opacity: 0, pointerEvents: 'none' }}>
@@ -326,6 +337,11 @@ export default function Dashboard({ session, usuario, stats, agendamentos, barbe
                           )}
                           {a.status === 'pendente' && a.data >= hoje && (
                             <button className="btn btn-danger" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => cancelar(a.id)}>Cancelar</button>
+                          )}
+                          {a.status !== 'cancelado' && a.data >= hoje && (
+                            <button className="btn btn-outline" style={{ padding: '4px 10px', fontSize: 11 }} onClick={() => setAvisoAg(a)}>
+                              Avisar{avisoCounts[a.id] ? ` · ${avisoCounts[a.id]}` : ''}
+                            </button>
                           )}
                         </div>
                       </div>

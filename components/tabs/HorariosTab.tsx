@@ -1,10 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import type { Session, Usuario, Agendamento, BarbeiroDB, StoreConfig, ClienteResumo } from '@/types';
 import { formatDate } from '@/utils';
 import { hojeSP } from '@/lib/datetime';
 import Avatar from '@/components/ui/Avatar';
 import Reveal from '@/components/ui/Reveal';
+import AvisoModal from '@/components/modals/AvisoModal';
 
 interface Props {
   session: Session; usuario: Usuario | null; barbeiros: BarbeiroDB[];
@@ -16,6 +17,10 @@ export default function HorariosTab({ session, barbeiros, agendamentos, clientes
   const [filtroData, setFiltroData] = useState('');
   const [busy, setBusy]             = useState<string | null>(null);
   const [verHistorico, setVerHistorico] = useState(false);
+  const [avisoAg, setAvisoAg]       = useState<Agendamento | null>(null);
+  const [avisoCounts, setAvisoCounts] = useState<Record<string, number>>({});
+  const carregarAvisoCounts = () => fetch('/api/agendamentos?action=avisos_count').then(r => r.ok ? r.json() : { counts: {} }).then(d => setAvisoCounts(d.counts || {})).catch(() => {});
+  useEffect(() => { carregarAvisoCounts(); }, [agendamentos]);
 
   async function editarApelido(usuarioId: string, atual: string | null) {
     const novo = prompt('Apelido do cliente (deixe vazio para remover):', atual ?? '');
@@ -136,6 +141,9 @@ export default function HorariosTab({ session, barbeiros, agendamentos, clientes
                         <button className="btn btn-danger" style={{ padding: '7px 10px', fontSize: 11 }} disabled={!liberado || busy === a.id} title={liberado ? '' : `Disponível às ${a.horario}`} onClick={() => marcarPresenca(a.id, 'faltou')}>
                           ✕ Não compareceu
                         </button>
+                        <button className="btn btn-outline" style={{ padding: '7px 10px', fontSize: 11, position: 'relative' }} onClick={() => setAvisoAg(a)}>
+                          💬 Recados{avisoCounts[a.id] ? ` · ${avisoCounts[a.id]}` : ''}
+                        </button>
                         {!liberado && <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>libera às {a.horario}</span>}
                       </div>
                     </div>
@@ -184,6 +192,12 @@ export default function HorariosTab({ session, barbeiros, agendamentos, clientes
             })
           )}
         </div>
+      )}
+
+      {avisoAg && (
+        <AvisoModal agendamentoId={avisoAg.id} sessionId={session.id}
+          outroNome={clientes[avisoAg.usuario_id]?.apelido || clientes[avisoAg.usuario_id]?.nome || 'Cliente'}
+          onClose={() => setAvisoAg(null)} onSent={carregarAvisoCounts} />
       )}
     </div>
   );

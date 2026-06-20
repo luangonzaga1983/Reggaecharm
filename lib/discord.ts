@@ -1,7 +1,7 @@
 import type {
   Usuario, Agendamento, BarbeiroDB, StoreConfig,
   MaintenanceConfig, FotoBarbeiro, UnidadeConfig, ServicoConfig,
-  PixTransaction, PixStatus, ReservaFila, PushSub, AvalBarbeiro,
+  PixTransaction, PixStatus, ReservaFila, PushSub, AvalBarbeiro, AvisoAg,
 } from '@/types';
 
 // ─── Env (lazy + strict) ──────────────────────────────────────────────────────
@@ -440,6 +440,30 @@ export async function upsertAvaliacaoBarbeiro(barbeiroId: string, usuarioId: str
     return { ...data, _messageId: existente._messageId };
   }
   const msg = await post(CH_AGD(), JSON.stringify({ __type: 'aval_barbeiro', ...data }));
+  return { ...data, _messageId: msg.id };
+}
+
+// ─── Recados de agendamento (cliente ↔ barbeiro) ──────────────────────────────
+// Guardados no canal de agendamentos com marcador __type (parseAg ignora __type).
+function parseAviso(m: DMsg): AvisoAg | null {
+  try {
+    const d = JSON.parse(m.content);
+    if (d.__type !== 'aviso_ag') return null;
+    const { __type, ...rest } = d;
+    return { ...rest, _messageId: m.id };
+  } catch { return null; }
+}
+
+export async function getAllAvisos(opts: { fresh?: boolean } = {}): Promise<AvisoAg[]> {
+  return (await fetchAll(CH_AGD(), opts)).map(parseAviso).filter(Boolean) as AvisoAg[];
+}
+
+export const getAvisosByAgendamento = async (agId: string) =>
+  (await getAllAvisos()).filter(a => a.agendamento_id === agId).sort((x, y) => x.created_at.localeCompare(y.created_at));
+
+export async function createAviso(agId: string, fromId: string, texto: string): Promise<AvisoAg> {
+  const data = { id: `av${Date.now()}${Math.random().toString(36).slice(2, 6)}`, agendamento_id: agId, from_id: fromId, texto, created_at: new Date().toISOString() };
+  const msg = await post(CH_AGD(), JSON.stringify({ __type: 'aviso_ag', ...data }));
   return { ...data, _messageId: msg.id };
 }
 

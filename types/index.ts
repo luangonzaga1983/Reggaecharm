@@ -55,6 +55,16 @@ export interface Usuario {
   _messageId?: string;
 }
 
+/** Recado num agendamento (cliente ↔ barbeiro). Sem "visualizado". */
+export interface AvisoAg {
+  id: string;
+  agendamento_id: string;
+  from_id: string;
+  texto: string;
+  created_at: string;
+  _messageId?: string;
+}
+
 /** Avaliação direta de um barbeiro (1 por usuário, global). Define o ranking. */
 export interface AvalBarbeiro {
   barbeiro_id: string;
