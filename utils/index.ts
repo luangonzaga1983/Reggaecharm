@@ -63,7 +63,8 @@ export function applyStoreTheme(cfg?: { tema_cor?: string; tema_cor_custom?: str
     root.style.removeProperty('--accent-soft');
     root.removeAttribute('data-reggae');
   };
-  if (!cfg?.tema_cor) { clear(); return; }
+  // 'original' (ou sem cor) = tema padrão branco/preto, sem override de accent.
+  if (!cfg?.tema_cor || cfg.tema_cor === 'original') { clear(); return; }
 
   const setAccent = (hex: string, contrast?: string) => {
     const rgb = hexToRgb(hex);

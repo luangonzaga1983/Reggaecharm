@@ -663,13 +663,17 @@ export default function GerenciaPanel({ session, barbeiros: barbeirosInit, store
               <div>
                 <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 8 }}>Cor de destaque</label>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                  {(['blue', 'green', 'yellow', 'red', 'purple', 'reggae'] as const).map(cor => (
+                  {(['original', 'blue', 'green', 'yellow', 'red', 'purple', 'reggae'] as const).map(cor => (
                     <button
                       key={cor}
-                      className={`swatch ${storeConfig.tema_cor === cor ? 'active' : ''}`}
+                      className={`swatch ${(storeConfig.tema_cor ?? 'original') === cor ? 'active' : ''}`}
                       onClick={() => { setStoreConfig(p => ({ ...p, tema_cor: cor })); applyStoreTheme({ tema_cor: cor }); }}
-                      style={{ background: cor === 'reggae' ? REGGAE_GRADIENT : TEMA_COR_MAP[cor] }}
-                      title={cor === 'reggae' ? 'Reggae (verde/amarelo/vermelho)' : cor}
+                      style={{
+                        background: cor === 'reggae' ? REGGAE_GRADIENT
+                          : cor === 'original' ? 'linear-gradient(135deg,#fafafa 50%,#18181b 50%)'
+                          : TEMA_COR_MAP[cor],
+                      }}
+                      title={cor === 'reggae' ? 'Reggae (verde/amarelo/vermelho)' : cor === 'original' ? 'Tema original (padrão)' : cor}
                     />
                   ))}
                   <button

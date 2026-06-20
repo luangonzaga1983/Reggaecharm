@@ -153,7 +153,7 @@ export default function App() {
       )}
       {perfilAberto && (
         <PerfilBarbeiroModal barbeiro={perfilAberto} agendamentos={agendamentos}
-          onClose={() => setPerfilAberto(null)}
+          onClose={() => setPerfilAberto(null)} onChanged={refresh}
           isProprietario={session.role === 'barbeiro' && usuario?.barbeiro_id === perfilAberto.id} />
       )}
     </div>

@@ -34,7 +34,7 @@ interface Props {
 }
 
 export default function AgendarModal({ usuario, stats, barbeiros, storeConfig, onClose, onSuccess }: Props) {
-  const temPrefs = !!(usuario?.barbeiro_favorito || usuario?.servico_favorito || usuario?.unidade_favorita);
+  const temPrefs = !!(usuario?.barbeiro_favorito || usuario?.servico_favorito);
   const [step, setStep]             = useState<Step>(temPrefs ? 'pref' : 'unidade');
   const [unidadeId, setUnidadeId]   = useState('');
   const [barbeiroId, setBarbeiroId] = useState('');
@@ -87,20 +87,16 @@ export default function AgendarModal({ usuario, stats, barbeiros, storeConfig, o
   function usarPrefs() {
     const bId = usuario?.barbeiro_favorito || '';
     const sId = usuario?.servico_favorito || '';
-    let uId = usuario?.unidade_favorita || '';
     const bOk = barbeiros.find(b => b.id === bId && b.ativo);
     const sOk = servicos.find(s => s.id === sId && s.ativo);
-    let uOk = unidades.find(u => u.id === uId);
-    if (!uOk && bOk) {
-      const u = unidades.find(un => bOk.unidades?.includes(un.id) || un.barbeiros?.includes(bId));
-      if (u) { uId = u.id; uOk = u; }
-    }
-    if (uOk) setUnidadeId(uId);
+    // Unidade SEMPRE derivada do barbeiro (não há mais unidade favorita) — assim
+    // nunca salva um barbeiro numa unidade onde ele não atende.
+    const uOk = bOk ? unidades.find(un => bOk.unidades?.includes(un.id) || un.barbeiros?.includes(bId)) : undefined;
+    if (uOk) setUnidadeId(uOk.id);
     if (bOk) setBarbeiroId(bId);
     if (sOk) setServicoId(sId);
     if (uOk && bOk && sOk) setStep('data');
-    else if (!uOk) setStep('unidade');
-    else if (!bOk) setStep('barbeiro');
+    else if (!bOk || !uOk) setStep('unidade'); // sem barbeiro válido/unidade → escolhe do zero
     else setStep('servico');
   }
 
@@ -193,7 +189,7 @@ export default function AgendarModal({ usuario, stats, barbeiros, storeConfig, o
     } catch { /* ignore */ }
   }
 
-  if (verPerfilB) return <PerfilBarbeiroModal barbeiro={verPerfilB} agendamentos={[]} onClose={() => setVerPerfilB(null)} />;
+  if (verPerfilB) return <PerfilBarbeiroModal barbeiro={verPerfilB} agendamentos={[]} onClose={() => setVerPerfilB(null)} onChanged={onSuccess} />;
 
   return (
     <div className="modal-back" onClick={e => e.target === e.currentTarget && onClose()}>
@@ -227,7 +223,6 @@ export default function AgendarModal({ usuario, stats, barbeiros, storeConfig, o
             <div className="card" style={{ padding: 14, marginBottom: 10, background: 'var(--bg-elev)' }}>
               <p style={{ fontSize: 11, color: 'var(--text-faint)', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: 8 }}>Suas preferências</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 13 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-dim)' }}>Unidade</span><span>{unidades.find(u => u.id === usuario?.unidade_favorita)?.nome || '—'}</span></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-dim)' }}>Barbeiro</span><span>{barbeiros.find(b => b.id === usuario?.barbeiro_favorito)?.nome || '—'}</span></div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-dim)' }}>Serviço</span><span>{servicos.find(s => s.id === usuario?.servico_favorito)?.nome || '—'}</span></div>
               </div>

@@ -22,8 +22,8 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
   const [tema, setTema]                 = useState<'dark' | 'light'>('light');
   useEffect(() => { setTema(getStoredTheme()); }, []);
   const [barbeiroFav, setBarbeiroFav]   = useState(usuario?.barbeiro_favorito || '');
+  const [barbeiroBusca, setBarbeiroBusca] = useState('');
   const [servicoFav, setServicoFav]     = useState(usuario?.servico_favorito || '');
-  const [unidadeFav, setUnidadeFav]     = useState(usuario?.unidade_favorita || '');
   const [saving, setSaving]             = useState(false);
   const [saved, setSaved]               = useState(false);
 
@@ -47,9 +47,12 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
 
   async function salvarPrefs() {
     setSaving(true);
-    await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'prefs', tema, barbeiro_favorito: barbeiroFav || null, servico_favorito: servicoFav || null, unidade_favorita: unidadeFav || null }) });
+    // unidade_favorita: null limpa qualquer valor antigo (preferência removida).
+    await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'prefs', tema, barbeiro_favorito: barbeiroFav || null, servico_favorito: servicoFav || null, unidade_favorita: null }) });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000); onUpdate();
   }
+
+  const barbeirosFiltrados = barbeiros.filter(b => b.nome.toLowerCase().includes(barbeiroBusca.trim().toLowerCase()));
 
   async function salvarPerfil() {
     setPerfilError(''); setPerfilOk(false); setSavingPerfil(true);
@@ -71,7 +74,7 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
   async function alterarSenha() {
     setSenhaError(''); setSenhaOk(false);
     if (senhaNova !== senhaConfirm) { setSenhaError('Senhas não coincidem'); return; }
-    if (senhaNova.length < 6) { setSenhaError('Mínimo 6 caracteres'); return; }
+    if (senhaNova.length < 8) { setSenhaError('Mínimo 8 caracteres'); return; }
     setSavingSenha(true);
     const res = await fetch('/api/usuarios', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'senha', senha_atual: senhaAtual, senha_nova: senhaNova }) });
     const d = await res.json(); setSavingSenha(false);
@@ -164,20 +167,35 @@ export default function Configuracoes({ session, usuario, barbeiros, storeConfig
       </Section>
 
       <Section title="Preferências">
+        <p style={{ fontSize: 12, color: 'var(--text-faint)', marginBottom: 12, lineHeight: 1.5 }}>
+          Ao agendar, dá pra usar essas preferências e ir direto pro horário. A unidade é definida pelo barbeiro escolhido.
+        </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {([
-            ['Barbeiro favorito', barbeiroFav, setBarbeiroFav, barbeiros.map(b => ({ v: b.id, l: b.nome }))],
-            ['Serviço favorito', servicoFav, setServicoFav, storeConfig.servicos.filter(s => s.ativo).map(s => ({ v: s.id, l: s.nome }))],
-            ['Unidade favorita', unidadeFav, setUnidadeFav, storeConfig.unidades.filter(u => u.ativo).map(u => ({ v: u.id, l: u.nome }))],
-          ] as Array<[string, string, (s: string) => void, Array<{ v: string; l: string }>]>).map(([label, val, setter, opts]) => (
-            <div key={label}>
-              <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>{label}</label>
-              <select className="input" value={val} onChange={e => setter(e.target.value)}>
-                <option value="">Nenhum</option>
-                {opts.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-              </select>
-            </div>
-          ))}
+          {/* Barbeiro favorito com busca */}
+          <div>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Barbeiro favorito</label>
+            <input className="input" placeholder="Buscar barbeiro pelo nome..." value={barbeiroBusca} onChange={e => setBarbeiroBusca(e.target.value)} style={{ marginBottom: 6 }} />
+            <select className="input" value={barbeiroFav} onChange={e => setBarbeiroFav(e.target.value)}>
+              <option value="">Nenhum</option>
+              {/* mantém o selecionado visível mesmo se a busca não bater */}
+              {barbeiroFav && !barbeirosFiltrados.some(b => b.id === barbeiroFav) && (() => {
+                const sel = barbeiros.find(b => b.id === barbeiroFav);
+                return sel ? <option value={sel.id}>{sel.nome}</option> : null;
+              })()}
+              {barbeirosFiltrados.map(b => <option key={b.id} value={b.id}>{b.nome}</option>)}
+            </select>
+            {barbeiroBusca && barbeirosFiltrados.length === 0 && (
+              <p style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 4 }}>Nenhum barbeiro encontrado.</p>
+            )}
+          </div>
+          {/* Serviço favorito */}
+          <div>
+            <label style={{ display: 'block', fontSize: 12, color: 'var(--text-dim)', marginBottom: 4 }}>Serviço favorito</label>
+            <select className="input" value={servicoFav} onChange={e => setServicoFav(e.target.value)}>
+              <option value="">Nenhum</option>
+              {storeConfig.servicos.filter(s => s.ativo).map(s => <option key={s.id} value={s.id}>{s.nome}</option>)}
+            </select>
+          </div>
           <button className="btn btn-primary" onClick={salvarPrefs} disabled={saving} style={{ marginTop: 4 }}>
             {saving ? <><span className="spinner" />Salvando</> : saved ? 'Salvo' : 'Salvar preferências'}
           </button>

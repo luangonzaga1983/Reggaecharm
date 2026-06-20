@@ -7,9 +7,11 @@ import Stars from '@/components/ui/Stars';
 interface Props {
   barbeiro: BarbeiroDB; agendamentos: Agendamento[];
   onClose: () => void; isProprietario?: boolean;
+  /** Chamado após avaliar — atualiza o ranking global no app pai. */
+  onChanged?: () => void;
 }
 
-export default function PerfilBarbeiroModal({ barbeiro, agendamentos, onClose, isProprietario }: Props) {
+export default function PerfilBarbeiroModal({ barbeiro, agendamentos, onClose, isProprietario, onChanged }: Props) {
   const [fotos, setFotos]               = useState<FotoBarbeiro[]>([]);
   const [fotosLoading, setFotosLoading] = useState(true);
   const [fotoAberta, setFotoAberta]     = useState<FotoBarbeiro | null>(null);
@@ -33,7 +35,7 @@ export default function PerfilBarbeiroModal({ barbeiro, agendamentos, onClose, i
     setAvalSaving(true);
     try {
       const r = await fetch('/api/barbeiros', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'avaliar', barbeiro_id: barbeiro.id, estrelas }) });
-      if (r.ok) { const d = await r.json(); setAval({ media: d.media, total: d.total, minha: d.minha }); }
+      if (r.ok) { const d = await r.json(); setAval({ media: d.media, total: d.total, minha: d.minha }); onChanged?.(); }
     } finally { setAvalSaving(false); }
   }
 
